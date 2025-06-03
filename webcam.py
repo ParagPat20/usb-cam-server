@@ -149,6 +149,13 @@ async def index(request):
     return web.Response(content_type="text/html", text=content)
 
 async def webrtc(request):
+    if request.method == "GET":
+        # Handle GET request
+        return web.Response(
+            content_type="application/json",
+            text=json.dumps({"status": "ready"}, ensure_ascii=False)
+        )
+    
     params = await request.json()
     if params["type"] == "request":
         # Configure STUN/TURN servers with TURN support
@@ -353,6 +360,7 @@ if __name__ == "__main__":
     
     # Add routes
     app.router.add_get("/", index)
+    app.router.add_get("/webrtc", webrtc)
     app.router.add_post("/webrtc", webrtc)
     app.router.add_get("/diagnostics", get_diagnostics)
     

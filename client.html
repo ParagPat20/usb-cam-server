@@ -164,6 +164,14 @@
                     }
                 };
 
+                // First check if server is ready
+                log('Checking server status...');
+                const checkResponse = await fetch('/webrtc');
+                if (!checkResponse.ok) {
+                    throw new Error(`Server check failed: ${checkResponse.status}`);
+                }
+                log('Server is ready');
+
                 // Create offer and send to server
                 log('Creating offer');
                 const offer = await pc.createOffer();
@@ -223,6 +231,12 @@
                 console.error(e);
             }
         }
+
+        // Add error handling for the page
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            log(`Error: ${msg} at line ${lineNo}`);
+            return false;
+        };
 
         start();
     </script>
