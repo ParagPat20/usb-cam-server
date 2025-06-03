@@ -211,9 +211,13 @@ async def webrtc(request):
         @pc.on("connectionstatechange")
         async def on_connectionstatechange():
             diag.log_state_change("connection", pc.connectionState)
+            logger.info(f"Connection state changed to: {pc.connectionState}")
             if pc.connectionState == "failed":
                 diag.connection_attempts += 1
                 logger.warning(f"Connection failed (attempt {diag.connection_attempts})")
+                # Log current ICE and signaling states
+                logger.warning(f"Current ICE state: {pc.iceConnectionState}")
+                logger.warning(f"Current signaling state: {pc.signalingState}")
                 if diag.connection_attempts < 3:  # Try up to 3 times
                     try:
                         logger.info("Attempting to restart ICE...")
@@ -228,6 +232,7 @@ async def webrtc(request):
         @pc.on("iceconnectionstatechange")
         async def on_iceconnectionstatechange():
             diag.log_state_change("ice", pc.iceConnectionState)
+            logger.info(f"ICE connection state changed to: {pc.iceConnectionState}")
             if pc.iceConnectionState == "disconnected":
                 logger.warning("ICE disconnected, attempting to restart...")
                 try:
@@ -238,6 +243,7 @@ async def webrtc(request):
         @pc.on("icegatheringstatechange")
         async def on_icegatheringstatechange():
             diag.log_state_change("ice", pc.iceGatheringState)
+            logger.info(f"ICE gathering state changed to: {pc.iceGatheringState}")
 
         @pc.on("signalingstatechange")
         async def on_signalingstatechange():
@@ -335,11 +341,10 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.INFO)
 
-    if args.cert_file:
-        ssl_context = ssl.SSLContext()
-        ssl_context.load_cert_chain(args.cert_file, args.key_file)
-    else:
-        ssl_context = None
+    # Create a basic SSL context even without certificates
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
 
     app = web.Application()
     
