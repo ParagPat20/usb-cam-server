@@ -88,8 +88,8 @@ def initialize_camera():
         
         if cap.isOpened():
             # Set resolution
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
             # Set frame rate
             cap.set(cv2.CAP_PROP_FPS, 30)
             # Set buffer size
