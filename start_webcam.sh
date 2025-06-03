@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Change to the directory containing webcam.py
-cd /home/jecon
+cd /home/jecon/usb-cam-server
 
 python3 webcam.py --host 0.0.0.0 --port 8080 &
 
@@ -19,7 +19,6 @@ while ! check_internet; do
     sleep 5
 done
 echo "Internet connection established!"
-
 
 
 # Start ngrok to expose the webcam server
