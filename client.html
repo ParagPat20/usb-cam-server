@@ -140,10 +140,7 @@
                 pc = new RTCPeerConnection({
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' }
-                    ],
-                    iceTransportPolicy: 'all',
-                    bundlePolicy: 'balanced',
-                    rtcpMuxPolicy: 'require'
+                    ]
                 });
 
                 pc.oniceconnectionstatechange = () => {
@@ -174,25 +171,27 @@
                 log('Local description set');
 
                 log('Sending offer to server');
-                const response = await fetch(window.location.origin + '/webrtc', {
+                const response = await fetch('/webrtc', {
                     method: 'POST',
                     headers: { 
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
+                        'Content-Type': 'application/json'
                     },
-                    mode: 'cors',
-                    credentials: 'include',
                     body: JSON.stringify({
                         type: 'request'
                     })
                 });
+
+                if (!response.ok) {
+                    throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
                 log('Received response from server');
 
-                await pc.setRemoteDescription({
+                await pc.setRemoteDescription(new RTCSessionDescription({
                     type: data.type,
                     sdp: data.sdp
-                });
+                }));
                 log('Remote description set');
 
                 // Send answer back to server
@@ -200,20 +199,23 @@
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 log('Sending answer to server');
-                await fetch(window.location.origin + '/webrtc', {
+                
+                const answerResponse = await fetch('/webrtc', {
                     method: 'POST',
                     headers: { 
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
+                        'Content-Type': 'application/json'
                     },
-                    mode: 'cors',
-                    credentials: 'include',
                     body: JSON.stringify({
                         type: 'answer',
                         sdp: answer.sdp,
                         id: data.id
                     })
                 });
+
+                if (!answerResponse.ok) {
+                    throw new Error(`Server responded with ${answerResponse.status}: ${answerResponse.statusText}`);
+                }
+
                 log('Answer sent');
             } catch (e) {
                 log(`Error: ${e.message}`);
