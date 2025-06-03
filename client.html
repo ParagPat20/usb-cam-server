@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>USB Webcam WebRTC Stream</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            margin: 20px 0;
+            color: #00ff9d;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .video-container {
+            width: 100%;
+            position: relative;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            margin: 20px 0;
+        }
+
+        video {
+            width: 100%;
+            height: auto;
+            max-height: 80vh;
+            object-fit: contain;
+            display: block;
+        }
+
+        #status {
+            margin: 15px 0;
+            padding: 10px 20px;
+            background: rgba(0, 255, 157, 0.1);
+            border: 1px solid #00ff9d;
+            border-radius: 6px;
+            color: #00ff9d;
+            font-weight: 500;
+        }
+
+        #debug {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            color: #888;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.9em;
+            max-height: 200px;
+            overflow-y: auto;
+            line-height: 1.4;
+        }
+
+        #debug::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #debug::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+
+        #debug::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 4px;
+        }
+
+        #debug::-webkit-scrollbar-thumb:hover {
+            background: #444;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+
+            video {
+                max-height: 60vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>USB Webcam Stream</h1>
+        <div class="video-container">
+            <video id="video" autoplay playsinline controls></video>
+        </div>
+        <div id="status">Connecting...</div>
+        <div id="debug"></div>
+    </div>
+    <script>
+        const video = document.getElementById('video');
+        const status = document.getElementById('status');
+        const debug = document.getElementById('debug');
+        let pc;
+
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            debug.innerHTML += `[${time}] ${message}<br>`;
+            debug.scrollTop = debug.scrollHeight;
+            console.log(message);
+        }
+
+        async function start() {
+            try {
+                status.textContent = 'Connecting...';
+                log('Creating RTCPeerConnection');
+                pc = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' }
+                    ],
+                    iceTransportPolicy: 'all',
+                    bundlePolicy: 'balanced',
+                    rtcpMuxPolicy: 'require'
+                });
+
+                pc.oniceconnectionstatechange = () => {
+                    log(`ICE Connection State: ${pc.iceConnectionState}`);
+                };
+
+                pc.onconnectionstatechange = () => {
+                    log(`Connection State: ${pc.connectionState}`);
+                };
+
+                pc.onicegatheringstatechange = () => {
+                    log(`ICE Gathering State: ${pc.iceGatheringState}`);
+                };
+
+                pc.ontrack = (event) => {
+                    log(`Received track: ${event.track.kind}`);
+                    if (event.track.kind === 'video') {
+                        video.srcObject = event.streams[0];
+                        status.textContent = 'Streaming!';
+                        log('Video stream attached');
+                    }
+                };
+
+                // Create offer and send to server
+                log('Creating offer');
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                log('Local description set');
+
+                log('Sending offer to server');
+                const response = await fetch('/webrtc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'request'
+                    })
+                });
+                const data = await response.json();
+                log('Received response from server');
+
+                await pc.setRemoteDescription({
+                    type: data.type,
+                    sdp: data.sdp
+                });
+                log('Remote description set');
+
+                // Send answer back to server
+                log('Creating answer');
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                log('Sending answer to server');
+                await fetch('/webrtc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'answer',
+                        sdp: answer.sdp,
+                        id: data.id
+                    })
+                });
+                log('Answer sent');
+            } catch (e) {
+                log(`Error: ${e.message}`);
+                status.textContent = 'Error: ' + e.message;
+                console.error(e);
+            }
+        }
+
+        start();
+    </script>
+</body>
+</html> 
