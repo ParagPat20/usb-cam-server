@@ -341,13 +341,14 @@ if __name__ == "__main__":
 
     app = web.Application()
     
-    # Setup CORS
+    # Setup CORS with more permissive settings
     cors = cors_setup(app, defaults={
         "*": ResourceOptions(
             allow_credentials=True,
             expose_headers="*",
             allow_headers="*",
-            allow_methods="*"
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_origin="*"
         )
     })
     
