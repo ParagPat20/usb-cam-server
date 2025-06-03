@@ -331,8 +331,6 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8080, help="Port for HTTP server (default: 8080)")
     parser.add_argument("--verbose", "-v", action="count")
-    parser.add_argument("--cert-file", help="SSL certificate file (for HTTPS)")
-    parser.add_argument("--key-file", help="SSL key file (for HTTPS)")
 
     args = parser.parse_args()
 
@@ -340,11 +338,6 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
-
-    # Create a basic SSL context even without certificates
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
 
     app = web.Application()
     
@@ -361,12 +354,12 @@ if __name__ == "__main__":
     # Add routes
     app.router.add_get("/", index)
     app.router.add_post("/webrtc", webrtc)
-    app.router.add_get("/diagnostics", get_diagnostics)  # New diagnostics endpoint
+    app.router.add_get("/diagnostics", get_diagnostics)
     
     # Configure CORS for all routes
     for route in list(app.router.routes()):
         cors.add(route)
     
     app.on_shutdown.append(on_shutdown)
-    web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_context)
+    web.run_app(app, host=args.host, port=args.port)
 
