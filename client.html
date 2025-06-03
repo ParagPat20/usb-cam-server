@@ -174,7 +174,7 @@
                 log('Local description set');
 
                 log('Sending offer to server');
-                const response = await fetch('/webrtc', {
+                const response = await fetch(window.location.origin + '/webrtc', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -195,7 +195,7 @@
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 log('Sending answer to server');
-                await fetch('/webrtc', {
+                await fetch(window.location.origin + '/webrtc', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
