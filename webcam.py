@@ -347,8 +347,7 @@ if __name__ == "__main__":
             allow_credentials=True,
             expose_headers="*",
             allow_headers="*",
-            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            allow_origin="*"
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
         )
     })
     
