@@ -1,0 +1,14 @@
+[Unit]
+Description=SSH Tunnel to EC2
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/usb-cam-server
+ExecStart=/home/pi/usb-cam-server/tunnel.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 

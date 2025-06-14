@@ -338,6 +338,8 @@ if __name__ == "__main__":
     parser.add_argument("--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8080, help="Port for HTTP server (default: 8080)")
     parser.add_argument("--verbose", "-v", action="count")
+    parser.add_argument("--cert-file", help="SSL certificate file (optional)")
+    parser.add_argument("--key-file", help="SSL key file (optional)")
 
     args = parser.parse_args()
 
@@ -369,5 +371,12 @@ if __name__ == "__main__":
         cors.add(route)
     
     app.on_shutdown.append(on_shutdown)
-    web.run_app(app, host=args.host, port=args.port)
+
+    # Configure SSL if certificates are provided
+    ssl_context = None
+    if args.cert_file and args.key_file:
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(args.cert_file, args.key_file)
+
+    web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_context)
 
