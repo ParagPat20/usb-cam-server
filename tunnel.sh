@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # Configuration
-EC2_USER="ec2-user"
+EC2_USER="ubuntu"
 EC2_HOST="13.201.75.136"
-EC2_KEY_PATH="ec2-key.pem"
+EC2_KEY_PATH="Jecon.pem"
 LOCAL_PORT=8080
 REMOTE_PORT=8080
 
