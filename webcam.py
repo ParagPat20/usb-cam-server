@@ -335,7 +335,7 @@ async def on_shutdown(app):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WebRTC webcam server")
-    parser.add_argument("--host", default="13.201.75.136", help="Host for HTTP server (default: 0.0.0.0)")
+    parser.add_argument("--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8080, help="Port for HTTP server (default: 8080)")
     parser.add_argument("--verbose", "-v", action="count")
 
