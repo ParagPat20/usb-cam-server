@@ -96,6 +96,46 @@ view_tunnel_tmux() {
     fi
 }
 
+# Function to install all services
+install_all_services() {
+    chmod +x install_services.sh
+    sudo ./install_services.sh
+}
+
+# Function to start all services
+start_all() {
+    sudo systemctl start webcam.service
+    sudo systemctl start tunnel.service
+    echo "All services started"
+}
+
+# Function to stop all services
+stop_all() {
+    sudo systemctl stop webcam.service
+    sudo systemctl stop tunnel.service
+    echo "All services stopped"
+}
+
+# Function to restart all services
+restart_all() {
+    sudo systemctl restart webcam.service
+    sudo systemctl restart tunnel.service
+    echo "All services restarted"
+}
+
+# Function to check all services status
+status_all() {
+    echo "=== Webcam Service Status ==="
+    sudo systemctl status webcam.service
+    echo -e "\n=== Tunnel Service Status ==="
+    sudo systemctl status tunnel.service
+}
+
+# Function to view all logs
+logs_all() {
+    sudo journalctl -u webcam.service -u tunnel.service -f
+}
+
 # Main script
 case "$1" in
     "start")
@@ -137,8 +177,26 @@ case "$1" in
     "tunnel-tmux-view")
         view_tunnel_tmux
         ;;
+    "install-all")
+        install_all_services
+        ;;
+    "start-all")
+        start_all
+        ;;
+    "stop-all")
+        stop_all
+        ;;
+    "restart-all")
+        restart_all
+        ;;
+    "status-all")
+        status_all
+        ;;
+    "logs-all")
+        logs_all
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|logs|setup|terminal|tunnel|tunnel-stop|tunnel-status|tunnel-tmux|tunnel-tmux-stop|tunnel-tmux-view}"
+        echo "Usage: $0 {start|stop|restart|status|logs|setup|terminal|tunnel|tunnel-stop|tunnel-status|tunnel-tmux|tunnel-tmux-stop|tunnel-tmux-view|install-all|start-all|stop-all|restart-all|status-all|logs-all}"
         exit 1
         ;;
 esac 

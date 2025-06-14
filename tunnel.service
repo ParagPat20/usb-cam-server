@@ -1,6 +1,7 @@
 [Unit]
 Description=SSH Tunnel to EC2
-After=network.target
+After=network.target webcam.service
+Requires=webcam.service
 
 [Service]
 Type=simple
