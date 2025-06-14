@@ -1,12 +1,17 @@
 [Unit]
 Description=Start Webcam and Tunnel in Tmux
 After=network.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=pi
-WorkingDirectory=/home/pi/usb-cam-server
-ExecStart=/home/pi/usb-cam-server/startup.sh
+User=jecon
+WorkingDirectory=/home/jecon/usb-cam-server
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/jecon/.Xauthority
+Environment=PATH=/home/jecon/usb-cam-server/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStartPre=/bin/sleep 10
+ExecStart=/bin/bash /home/jecon/usb-cam-server/startup.sh
 RemainAfterExit=yes
 
 [Install]
