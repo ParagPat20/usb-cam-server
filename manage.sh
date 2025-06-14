@@ -44,6 +44,58 @@ setup_terminal() {
     ./setup_terminal.sh
 }
 
+# Function to start tunnel
+start_tunnel() {
+    chmod +x tunnel.sh
+    ./tunnel.sh
+}
+
+# Function to stop tunnel
+stop_tunnel() {
+    pkill -f "ssh -N"
+    echo "Tunnel stopped"
+}
+
+# Function to check tunnel status
+status_tunnel() {
+    if pgrep -f "ssh -N" > /dev/null; then
+        echo "Tunnel is running"
+        ps aux | grep "ssh -N" | grep -v grep
+    else
+        echo "Tunnel is not running"
+    fi
+}
+
+# Function to start tunnel in tmux
+start_tunnel_tmux() {
+    if ! tmux has-session -t tunnel 2>/dev/null; then
+        tmux new-session -d -s tunnel
+        tmux send-keys -t tunnel "chmod +x tunnel.sh && ./tunnel.sh" C-m
+        echo "Tunnel started in tmux session 'tunnel'"
+    else
+        echo "Tunnel tmux session already exists"
+    fi
+}
+
+# Function to stop tunnel in tmux
+stop_tunnel_tmux() {
+    if tmux has-session -t tunnel 2>/dev/null; then
+        tmux kill-session -t tunnel
+        echo "Tunnel tmux session stopped"
+    else
+        echo "No tunnel tmux session found"
+    fi
+}
+
+# Function to view tunnel logs in tmux
+view_tunnel_tmux() {
+    if tmux has-session -t tunnel 2>/dev/null; then
+        tmux attach-session -t tunnel
+    else
+        echo "No tunnel tmux session found"
+    fi
+}
+
 # Main script
 case "$1" in
     "start")
@@ -67,8 +119,26 @@ case "$1" in
     "terminal")
         setup_terminal
         ;;
+    "tunnel")
+        start_tunnel
+        ;;
+    "tunnel-stop")
+        stop_tunnel
+        ;;
+    "tunnel-status")
+        status_tunnel
+        ;;
+    "tunnel-tmux")
+        start_tunnel_tmux
+        ;;
+    "tunnel-tmux-stop")
+        stop_tunnel_tmux
+        ;;
+    "tunnel-tmux-view")
+        view_tunnel_tmux
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|logs|setup|terminal}"
+        echo "Usage: $0 {start|stop|restart|status|logs|setup|terminal|tunnel|tunnel-stop|tunnel-status|tunnel-tmux|tunnel-tmux-stop|tunnel-tmux-view}"
         exit 1
         ;;
 esac 
