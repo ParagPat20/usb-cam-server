@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=jecon
+Group=jecon
 WorkingDirectory=/home/jecon/usb-cam-server
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/jecon/.Xauthority
