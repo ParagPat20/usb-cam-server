@@ -1,0 +1,13 @@
+[Unit]
+Description=Start Webcam and Tunnel in Tmux
+After=network.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/usb-cam-server
+ExecStart=/home/pi/usb-cam-server/startup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target 
