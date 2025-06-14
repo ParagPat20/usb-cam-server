@@ -38,6 +38,12 @@ view_logs() {
     sudo journalctl -u webcam.service -f
 }
 
+# Function to setup terminal
+setup_terminal() {
+    chmod +x setup_terminal.sh
+    ./setup_terminal.sh
+}
+
 # Main script
 case "$1" in
     "start")
@@ -58,8 +64,11 @@ case "$1" in
     "setup")
         check_venv
         ;;
+    "terminal")
+        setup_terminal
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status|logs|setup}"
+        echo "Usage: $0 {start|stop|restart|status|logs|setup|terminal}"
         exit 1
         ;;
 esac 
