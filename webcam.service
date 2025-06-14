@@ -1,0 +1,15 @@
+[Unit]
+Description=Webcam WebRTC Server
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/f/JeCH_AeroTECH/usb-cam-server
+ExecStart=/bin/bash /f/JeCH_AeroTECH/usb-cam-server/start_webcam.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 
