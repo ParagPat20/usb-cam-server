@@ -16,6 +16,7 @@ from aiortc import RTCPeerConnection, RTCSessionDescription, RTCConfiguration, R
 from aiortc.contrib.media import MediaPlayer, MediaRelay, MediaStreamTrack
 from aiortc.rtcrtpsender import RTCRtpSender
 from datetime import datetime
+import threading
 
 ROOT = os.path.dirname(__file__)
 
@@ -28,6 +29,11 @@ logger = logging.getLogger(__name__)
 
 # Connection tracking
 connection_stats = {}
+
+# Frame grabber thread globals
+latest_frame = None
+frame_lock = threading.Lock()
+frame_grabber_running = True
 
 class ConnectionDiagnostics:
     def __init__(self, pc_id):
@@ -103,9 +109,22 @@ def initialize_camera():
     print("Failed to open camera at index 0")
     return False
 
-# Initialize camera at startup
+def frame_grabber():
+    global latest_frame, frame_grabber_running
+    while frame_grabber_running:
+        if cap is not None and cap.isOpened():
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                with frame_lock:
+                    latest_frame = frame.copy()
+        time.sleep(0.01)  # Small sleep to avoid 100% CPU
+
+# Start the frame grabber thread after camera initialization
 if not initialize_camera():
     print("Warning: No camera available. The application will not be able to stream video.")
+else:
+    grabber_thread = threading.Thread(target=frame_grabber, daemon=True)
+    grabber_thread.start()
 
 class WebcamTrack(MediaStreamTrack):
     kind = "video"
@@ -116,33 +135,25 @@ class WebcamTrack(MediaStreamTrack):
         self._max_retries = 3
 
     async def recv(self):
-        if cap is None or not cap.isOpened():
-            print("Camera not available")
-            return None
-            
-        try:
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                self._retry_count += 1
-                if self._retry_count >= self._max_retries:
-                    print("Failed to read frame from camera after multiple attempts")
-                    return None
-                print(f"Retrying frame capture (attempt {self._retry_count})")
-                await asyncio.sleep(0.1)  # Small delay before retry
-                return await self.recv()
-
-            self._retry_count = 0  # Reset retry count on successful capture
-            # Convert BGR to RGBA
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-            
-            pts = time.time() * 1000000
-            new_frame = av.VideoFrame.from_ndarray(frame, format='rgba')
-            new_frame.pts = int(pts)
-            new_frame.time_base = Fraction(1,1000000)
-            return new_frame
-        except Exception as e:
-            print(f"Error in WebcamTrack.recv: {str(e)}")
-            return None
+        global latest_frame
+        # Always use the latest frame from the grabber thread
+        for _ in range(self._max_retries):
+            with frame_lock:
+                frame = None if latest_frame is None else latest_frame.copy()
+            if frame is not None:
+                # Optionally, check for stability and save if stable
+                # if detect_stability(frame):
+                #     save_queue.put(frame.copy())
+                # Convert BGR to RGBA for streaming
+                frame_rgba = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+                pts = time.time() * 1000000
+                new_frame = av.VideoFrame.from_ndarray(frame_rgba, format='rgba')
+                new_frame.pts = int(pts)
+                new_frame.time_base = Fraction(1,1000000)
+                return new_frame
+            await asyncio.sleep(0.01)  # Wait for a frame to become available
+        print("No frame available after retries")
+        return None
 
 async def index(request):
     content = open(os.path.join(ROOT, "client.html"), "r").read()
@@ -326,12 +337,15 @@ async def get_diagnostics(request):
     )
 
 async def on_shutdown(app):
+    global frame_grabber_running
     # close peer connections
     coros = [pc.close() for pc in pcs.values()]
     await asyncio.gather(*coros)
     pcs.clear()
     if cap is not None:
         cap.release()  # Release the webcam
+    frame_grabber_running = False
+    # Optionally join the thread if needed
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WebRTC webcam server")
