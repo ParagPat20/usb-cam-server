@@ -4,7 +4,7 @@ import cv2
 app = Flask(__name__)
 
 def generate_frames():
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(0)
     # Set lower resolution for better performance
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
