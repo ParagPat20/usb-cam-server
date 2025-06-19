@@ -6,8 +6,8 @@ app = Flask(__name__)
 def generate_frames():
     cap = cv2.VideoCapture(0)
     # Set lower resolution for better performance
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
     cap.set(cv2.CAP_PROP_FPS, 30)
     
     # Set buffer size to minimum to reduce latency
