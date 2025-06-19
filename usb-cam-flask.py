@@ -64,9 +64,28 @@ def index():
         </style>
     </head>
     <body>
-        <div class="video-container">
-            <img src="/video_feed">
+        <div class="video-container" id="videoContainer">
+            <img src="/video_feed" id="videoStream">
         </div>
+        <button id="fullscreenBtn" style="position: fixed; top: 20px; right: 20px; z-index: 10; padding: 10px 20px; font-size: 16px;">Full Screen</button>
+        <script>
+            const videoContainer = document.getElementById('videoContainer');
+            const fullscreenBtn = document.getElementById('fullscreenBtn');
+            fullscreenBtn.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    videoContainer.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            });
+            document.addEventListener('fullscreenchange', () => {
+                if (document.fullscreenElement) {
+                    fullscreenBtn.textContent = 'Exit Full Screen';
+                } else {
+                    fullscreenBtn.textContent = 'Full Screen';
+                }
+            });
+        </script>
     </body>
     </html>
     '''
