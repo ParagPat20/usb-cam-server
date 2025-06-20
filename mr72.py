@@ -10,7 +10,7 @@ def crc_crc8(buffer):
         crc = crc8_table[(crc ^ b) & 0xFF]
     return crc
 
-def parse_sector2(frame):
+def parse_sector1(frame):
     if len(frame) != 19:
         return None
 
@@ -18,8 +18,8 @@ def parse_sector2(frame):
     if frame[0] != 0x54 or frame[1] != 0x48:
         return None
 
-    # Sector 2 is bytes 2 (MSB) and 3 (LSB)
-    msb, lsb = frame[2], frame[3]
+    # Sector 1 is bytes 16 (MSB) and 17 (LSB)
+    msb, lsb = frame[16], frame[17]
     val = (msb << 8) | lsb
     if val == 0xFFFF:
         return None  # Invalid data
@@ -30,6 +30,6 @@ ser = serial.Serial("/dev/ttyS0", 115200, timeout=1)
 
 while True:
     frame = ser.read(19)
-    sector2 = parse_sector2(frame)
-    if sector2 is not None:
-        print(f"Sector 2: {sector2} mm")
+    sector1 = parse_sector1(frame)
+    if sector1 is not None:
+        print(f"Sector 1: {sector1} mm")
