@@ -13,8 +13,9 @@ crc8_table = [
 def crc_crc8(buffer):
     crc = 0
     for b in buffer:
-        crc = crc8_table[(crc ^ b) & 0xFF]
-    return crc
+        i = (crc ^ b) & 0xFF
+        crc = (crc8_table[i] ^ ((crc << 8) & 0xFF)) & 0xFF
+    return crc & 0xFF
 
 buffer = b''
 
