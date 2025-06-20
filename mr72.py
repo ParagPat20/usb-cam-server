@@ -23,7 +23,7 @@ def parse_sector2(frame):
     val = (msb << 8) | lsb
     if val == 0xFFFF:
         return None  # Invalid data
-    return val / 1000.0  # mm to m
+    return val
 
 # Setup serial (adjust port and baudrate if needed)
 ser = serial.Serial("/dev/ttyS0", 115200, timeout=1)
@@ -32,4 +32,4 @@ while True:
     frame = ser.read(19)
     sector2 = parse_sector2(frame)
     if sector2 is not None:
-        print(f"Sector 2: {sector2} m")
+        print(f"Sector 2: {sector2} mm")
