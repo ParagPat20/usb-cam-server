@@ -5,16 +5,23 @@ ser = serial.Serial("/dev/ttyS0", 115200, timeout=1)
 HEADER = bytes([0x54, 0x48])
 FRAME_LEN = 19
 
-def crc8_generic(buf, polynomial=0x07, initial_value=0x00):
+def reflect_byte(b):
+    return int('{:08b}'.format(b)[::-1], 2)
+
+def crc8_variant(buf, polynomial=0x07, initial_value=0x00, reflect_in=False, reflect_out=False, final_xor=0x00):
     crc = initial_value
     for b in buf:
+        if reflect_in:
+            b = reflect_byte(b)
         crc ^= b
         for _ in range(8):
             if crc & 0x80:
                 crc = ((crc << 1) ^ polynomial) & 0xFF
             else:
                 crc = (crc << 1) & 0xFF
-    return crc
+    if reflect_out:
+        crc = reflect_byte(crc)
+    return crc ^ final_xor
 
 buffer = b''
 
@@ -31,7 +38,7 @@ while True:
             print(f"Frame: {frame.hex()}")
             for poly in polys:
                 for init in inits:
-                    calc_crc = crc8_generic(data, polynomial=poly, initial_value=init)
+                    calc_crc = crc8_variant(data, polynomial=poly, initial_value=init)
                     match = calc_crc == recv_crc
                     print(f"  Poly: {hex(poly)}, Init: {hex(init)}, Calc CRC: {hex(calc_crc)}, Recv CRC: {hex(recv_crc)}, Match: {match}")
             print("-"*60)
