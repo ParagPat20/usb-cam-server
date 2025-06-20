@@ -11,25 +11,32 @@ def crc_crc8(buffer):
     return crc
 
 def parse_sector1(frame):
-    if len(frame) != 19:
-        return None
-
-    # Check header
-    if frame[0] != 0x54 or frame[1] != 0x48:
-        return None
-
-    # Sector 1 is bytes 16 (MSB) and 17 (LSB)
+    # frame is 19 bytes, already validated
     msb, lsb = frame[16], frame[17]
     val = (msb << 8) | lsb
     if val == 0xFFFF:
-        return None  # Invalid data
+        return None
     return val
 
 # Setup serial (adjust port and baudrate if needed)
 ser = serial.Serial("/dev/ttyS0", 115200, timeout=1)
+buffer = bytearray()
 
 while True:
-    frame = ser.read(19)
-    sector1 = parse_sector1(frame)
-    if sector1 is not None:
-        print(f"Sector 1: {sector1} mm")
+    # Read available bytes and add to buffer
+    data = ser.read(64)  # Read up to 64 bytes at a time
+    buffer.extend(data)
+
+    # Process all complete frames in buffer
+    while len(buffer) >= 19:
+        # Check for frame alignment
+        if buffer[0] == 0x54 and buffer[1] == 0x48 and buffer[18] == 0x4d:
+            frame = buffer[:19]
+            sector1 = parse_sector1(frame)
+            if sector1 is not None:
+                print(f"Sector 1: {sector1} mm")
+            # Remove processed frame from buffer
+            buffer = buffer[19:]
+        else:
+            # Not aligned, remove first byte and try again
+            buffer = buffer[1:]
