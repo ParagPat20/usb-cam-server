@@ -53,6 +53,23 @@ def parse_frame(frame):
             data[k] = None
     return data, None
 
+def parse_and_print(frame):
+    if frame[0] != 0x54 or frame[1] != 0x48:
+        print("Header mismatch")
+        return
+    if crc8(frame[:18]) != frame[18]:
+        print("CRC error")
+        return
+    fields = [int.from_bytes(frame[2+i*2:4+i*2], 'big') for i in range(8)]
+    names = [
+        "sector2_nearest", "sector3_nearest", "sector_90", "sector_135",
+        "sector_180", "sector_225", "sector_270", "sector1_nearest"
+    ]
+    data = {}
+    for name, value in zip(names, fields):
+        data[name] = None if value == 0xFFFF else value
+    print("MR72 Data:", data)
+
 def main():
     ser = serial.Serial('/dev/ttyS0', 115200, timeout=1)
     print("Listening for MR72 frames (raw output)...")
@@ -66,6 +83,7 @@ def main():
                     frame = b'\x54\x48' + rest
                     # Print raw frame in hex
                     print("Raw frame:", frame.hex(' '))
+                    parse_and_print(frame)
                 else:
                     print("Incomplete frame")
         time.sleep(0.1)
