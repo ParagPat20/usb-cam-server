@@ -54,9 +54,8 @@ def parse_frame(frame):
 
 def main():
     ser = serial.Serial('/dev/ttyS0', 115200, timeout=1)
-    print("Listening for MR72 frames...")
+    print("Listening for MR72 frames (raw output)...")
     while True:
-        # Read until we get a valid header
         b = ser.read(1)
         if b == b'\x54':  # 'T'
             b2 = ser.read(1)
@@ -64,11 +63,8 @@ def main():
                 rest = ser.read(17)  # 16 data + 1 CRC
                 if len(rest) == 17:
                     frame = b'\x54\x48' + rest
-                    data, err = parse_frame(frame)
-                    if err:
-                        print("Frame error:", err)
-                    else:
-                        print("MR72 Data:", data)
+                    # Print raw frame in hex
+                    print("Raw frame:", frame.hex(' '))
                 else:
                     print("Incomplete frame")
             # else: keep searching for header
