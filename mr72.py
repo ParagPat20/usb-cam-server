@@ -1,4 +1,5 @@
 import serial
+import time
 
 # CRC8 table from your protocol
 CRC8_TABLE = [
@@ -67,6 +68,7 @@ def main():
                     print("Raw frame:", frame.hex(' '))
                 else:
                     print("Incomplete frame")
+        time.sleep(0.1)
             # else: keep searching for header
 
 if __name__ == "__main__":
