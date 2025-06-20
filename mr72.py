@@ -10,32 +10,26 @@ def crc_crc8(buffer):
         crc = crc8_table[(crc ^ b) & 0xFF]
     return crc
 
-def parse_frame(frame):
+def parse_sector2(frame):
     if len(frame) != 19:
         return None
-    
+
+    # Check header
     if frame[0] != 0x54 or frame[1] != 0x48:
         return None
-    
-    def parse_distance(msb, lsb):
-        val = (msb << 8) | lsb
-        return None if val == 0xFFFF else val / 100.0  # convert cm to m
 
-    sector2 = parse_distance(frame[2], frame[3])
-    sector3 = parse_distance(frame[4], frame[5])
-    sector1 = parse_distance(frame[16], frame[17])
-
-    return {
-        "sector_1": sector1,
-        "sector_2": sector2,
-        "sector_3": sector3
-    }
+    # Sector 2 is bytes 2 (MSB) and 3 (LSB)
+    msb, lsb = frame[2], frame[3]
+    val = (msb << 8) | lsb
+    if val == 0xFFFF:
+        return None  # Invalid data
+    return val / 1000.0  # mm to m
 
 # Setup serial (adjust port and baudrate if needed)
 ser = serial.Serial("/dev/ttyS0", 115200, timeout=1)
 
 while True:
     frame = ser.read(19)
-    data = parse_frame(frame)
-    if data:
-        print(f"Sector 1: {data['sector_1']} m, Sector 2: {data['sector_2']} m, Sector 3: {data['sector_3']} m")
+    sector2 = parse_sector2(frame)
+    if sector2 is not None:
+        print(f"Sector 2: {sector2} m")
