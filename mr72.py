@@ -17,9 +17,6 @@ def parse_frame(frame):
     if frame[0] != 0x54 or frame[1] != 0x48:
         return None
     
-    if crc_crc8(frame[:18]) != frame[18]:
-        return None
-    
     def parse_distance(msb, lsb):
         val = (msb << 8) | lsb
         return None if val == 0xFFFF else val / 100.0  # convert cm to m
