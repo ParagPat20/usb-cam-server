@@ -36,6 +36,12 @@ latest_frame = None
 frame_lock = threading.Lock()
 frame_grabber_running = True
 
+# Recording globals
+recording_running = True
+recording_thread = None
+current_recording = None
+recording_lock = threading.Lock()
+
 class ConnectionDiagnostics:
     def __init__(self, pc_id):
         self.pc_id = pc_id
@@ -79,6 +85,150 @@ class ConnectionDiagnostics:
             "errors": self.errors
         }
 
+class VideoRecorder:
+    def __init__(self, filename, fps=30, width=960, height=540, preferred_codec="auto"):
+        self.filename = filename
+        self.fps = fps
+        self.width = width
+        self.height = height
+        
+        # Try different codecs based on platform with better error handling
+        self.fourcc = None
+        if platform.system() == "Windows":
+            # Define codec preferences based on user choice
+            if preferred_codec == "auto":
+                codecs_to_try = [
+                    ('mp4v', 'mp4v'),
+                    ('XVID', 'avi'),  # Fallback to AVI with XVID
+                    ('MJPG', 'avi'),  # Another AVI option
+                    ('H264', 'mp4')   # Last resort H264
+                ]
+            elif preferred_codec == "mp4v":
+                codecs_to_try = [('mp4v', 'mp4v')]
+            elif preferred_codec == "xvid":
+                codecs_to_try = [('XVID', 'avi'), ('mp4v', 'mp4v')]
+            elif preferred_codec == "mjpg":
+                codecs_to_try = [('MJPG', 'avi'), ('mp4v', 'mp4v')]
+            elif preferred_codec == "h264":
+                codecs_to_try = [('H264', 'mp4'), ('mp4v', 'mp4v')]
+            else:
+                codecs_to_try = [('mp4v', 'mp4v')]
+            
+            for codec_name, extension in codecs_to_try:
+                try:
+                    test_filename = f"test.{extension}"
+                    test_fourcc = cv2.VideoWriter_fourcc(*codec_name)
+                    test_writer = cv2.VideoWriter(test_filename, test_fourcc, fps, (width, height))
+                    if test_writer.isOpened():
+                        test_writer.release()
+                        if os.path.exists(test_filename):
+                            os.remove(test_filename)
+                        self.fourcc = test_fourcc
+                        # Update filename extension if needed
+                        if extension != 'mp4':
+                            base_name = os.path.splitext(filename)[0]
+                            self.filename = f"{base_name}.{extension}"
+                        logger.info(f"Using codec: {codec_name} for recording")
+                        break
+                    else:
+                        test_writer.release()
+                except Exception as e:
+                    logger.debug(f"Codec {codec_name} failed: {e}")
+                    continue
+            
+            if self.fourcc is None:
+                # Ultimate fallback - use default
+                self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                logger.warning("All codecs failed, using default mp4v")
+        else:
+            # Linux/Mac - use MP4V
+            self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        
+        self.out = None
+        self.frame_count = 0
+        self.start_time = time.time()
+        
+    def start(self):
+        try:
+            self.out = cv2.VideoWriter(self.filename, self.fourcc, self.fps, (self.width, self.height))
+            if not self.out.isOpened():
+                logger.error(f"Failed to open video writer for {self.filename}")
+                return False
+            logger.info(f"Started recording: {self.filename}")
+            return True
+        except Exception as e:
+            logger.error(f"Error starting recording {self.filename}: {e}")
+            return False
+    
+    def write_frame(self, frame):
+        if self.out and self.out.isOpened():
+            try:
+                # Resize frame if needed
+                if frame.shape[1] != self.width or frame.shape[0] != self.height:
+                    frame = cv2.resize(frame, (self.width, self.height))
+                self.out.write(frame)
+                self.frame_count += 1
+                return True
+            except Exception as e:
+                logger.error(f"Error writing frame to {self.filename}: {e}")
+                return False
+        return False
+    
+    def stop(self):
+        if self.out:
+            try:
+                self.out.release()
+                duration = time.time() - self.start_time
+                logger.info(f"Stopped recording: {self.filename} (Duration: {duration:.2f}s, Frames: {self.frame_count})")
+                return True
+            except Exception as e:
+                logger.error(f"Error stopping recording {self.filename}: {e}")
+                return False
+        return False
+
+def recording_worker():
+    global current_recording, recording_running, preferred_codec
+    
+    while recording_running:
+        try:
+            # Create new recording file with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Default to mp4, but VideoRecorder will adjust extension if needed
+            filename = os.path.join(ROOT, f"recording_{timestamp}.mp4")
+            
+            # Start new recording
+            with recording_lock:
+                if current_recording:
+                    current_recording.stop()
+                # Pass the preferred codec from command line args
+                current_recording = VideoRecorder(filename, preferred_codec=preferred_codec)
+                if not current_recording.start():
+                    logger.error("Failed to start new recording")
+                    continue
+            
+            # Record for 1 minute (60 seconds)
+            start_time = time.time()
+            while recording_running and (time.time() - start_time) < 60:
+                with frame_lock:
+                    frame = None if latest_frame is None else latest_frame.copy()
+                
+                if frame is not None:
+                    with recording_lock:
+                        if current_recording:
+                            current_recording.write_frame(frame)
+                
+                time.sleep(1.0 / 30.0)  # 30 FPS recording
+            
+            # Stop current recording
+            with recording_lock:
+                if current_recording:
+                    current_recording.stop()
+                    current_recording = None
+                    
+        except Exception as e:
+            logger.error(f"Error in recording worker: {e}")
+            time.sleep(1)  # Wait before retrying
+
 relay = None
 webcam = None
 cap = None
@@ -89,10 +239,11 @@ def initialize_camera():
     try:
         # Try V4L2 first (Linux)
         try:
-            cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+            cap = cv2.VideoCapture(2)
+            
         except:
-            cap = cv2.VideoCapture(0)  # Fallback to default backend
-        
+              # Fallback to default backend
+            cap = cv2.VideoCapture(2, cv2.CAP_V4L2)
         if cap.isOpened():
             # Set resolution
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
@@ -126,6 +277,14 @@ if not initialize_camera():
 else:
     grabber_thread = threading.Thread(target=frame_grabber, daemon=True)
     grabber_thread.start()
+    
+    # Start the recording thread only if recording is enabled
+    if recording_running:
+        recording_thread = threading.Thread(target=recording_worker, daemon=True)
+        recording_thread.start()
+        logger.info("Recording thread started - will create 1-minute video files with timestamps")
+    else:
+        logger.info("Recording disabled - no recording thread started")
 
 class WebcamTrack(MediaStreamTrack):
     kind = "video"
@@ -349,8 +508,67 @@ async def get_diagnostics(request):
         status=404
     )
 
+async def recording_status(request):
+    """Endpoint to get recording status and control recording"""
+    global recording_running, current_recording, recording_thread
+    
+    if request.method == "GET":
+        # Get recording status
+        status = {
+            "recording_enabled": recording_running,
+            "currently_recording": current_recording is not None,
+            "current_file": current_recording.filename if current_recording else None,
+            "frame_count": current_recording.frame_count if current_recording else 0
+        }
+        return web.Response(
+            content_type="application/json",
+            text=json.dumps(status, ensure_ascii=False)
+        )
+    
+    elif request.method == "POST":
+        # Control recording
+        try:
+            data = await request.json()
+            action = data.get("action")
+            
+            if action == "start" and not recording_running:
+                recording_running = True
+                # Start recording thread if not already running
+                if not recording_thread or not recording_thread.is_alive():
+                    recording_thread = threading.Thread(target=recording_worker, daemon=True)
+                    recording_thread.start()
+                return web.Response(
+                    content_type="application/json",
+                    text=json.dumps({"status": "Recording started"}, ensure_ascii=False)
+                )
+            
+            elif action == "stop" and recording_running:
+                recording_running = False
+                with recording_lock:
+                    if current_recording:
+                        current_recording.stop()
+                        current_recording = None
+                return web.Response(
+                    content_type="application/json",
+                    text=json.dumps({"status": "Recording stopped"}, ensure_ascii=False)
+                )
+            
+            else:
+                return web.Response(
+                    content_type="application/json",
+                    text=json.dumps({"error": "Invalid action or already in requested state"}, ensure_ascii=False),
+                    status=400
+                )
+                
+        except Exception as e:
+            return web.Response(
+                content_type="application/json",
+                text=json.dumps({"error": str(e)}, ensure_ascii=False),
+                status=500
+            )
+
 async def on_shutdown(app):
-    global frame_grabber_running
+    global frame_grabber_running, recording_running, current_recording
     # close peer connections
     coros = [pc.close() for pc in pcs.values()]
     await asyncio.gather(*coros)
@@ -358,7 +576,19 @@ async def on_shutdown(app):
     if cap is not None:
         cap.release()  # Release the webcam
     frame_grabber_running = False
-    # Optionally join the thread if needed
+    
+    # Stop recording
+    recording_running = False
+    with recording_lock:
+        if current_recording:
+            current_recording.stop()
+            current_recording = None
+    
+    # Wait for threads to finish (with timeout)
+    if recording_thread and recording_thread.is_alive():
+        recording_thread.join(timeout=5.0)
+    
+    logger.info("Shutdown complete - all threads stopped")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WebRTC webcam server")
@@ -367,6 +597,9 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", "-v", action="count")
     parser.add_argument("--cert-file", help="SSL certificate file (optional)")
     parser.add_argument("--key-file", help="SSL key file (optional)")
+    parser.add_argument("--no-recording", action="store_true", help="Disable video recording")
+    parser.add_argument("--codec", default="auto", choices=["auto", "mp4v", "xvid", "mjpg", "h264"], 
+                       help="Preferred video codec for recording (default: auto)")
 
     args = parser.parse_args()
 
@@ -374,6 +607,14 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
+
+    # Disable recording if requested
+    if args.no_recording:
+        recording_running = False
+        logger.info("Video recording disabled by command line argument")
+    
+    # Store preferred codec for use in VideoRecorder
+    preferred_codec = args.codec
 
     app = web.Application()
     
@@ -392,6 +633,8 @@ if __name__ == "__main__":
     app.router.add_get("/webrtc", webrtc)
     app.router.add_post("/webrtc", webrtc)
     app.router.add_get("/diagnostics", get_diagnostics)
+    app.router.add_get("/recording_status", recording_status)
+    app.router.add_post("/recording_status", recording_status)
     
     # Configure CORS for all routes
     for route in list(app.router.routes()):
