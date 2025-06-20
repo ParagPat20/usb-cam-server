@@ -18,25 +18,28 @@ def parse_sector1(frame):
         return None
     return val
 
+def is_valid_frame(frame):
+    return (
+        len(frame) == 19 and
+        frame[0] == 0x54 and
+        frame[1] == 0x48 and
+        crc_crc8(frame[:18]) == frame[18]
+    )
+
 # Setup serial (adjust port and baudrate if needed)
 ser = serial.Serial("/dev/ttyS0", 115200, timeout=1)
 buffer = bytearray()
 
 while True:
-    # Read available bytes and add to buffer
-    data = ser.read(64)  # Read up to 64 bytes at a time
+    data = ser.read(64)
     buffer.extend(data)
 
-    # Process all complete frames in buffer
     while len(buffer) >= 19:
-        # Check for frame alignment
-        if buffer[0] == 0x54 and buffer[1] == 0x48 and buffer[18] == 0x4d:
-            frame = buffer[:19]
+        frame = buffer[:19]
+        if is_valid_frame(frame):
             sector1 = parse_sector1(frame)
             if sector1 is not None:
                 print(f"Sector 1: {sector1} mm")
-            # Remove processed frame from buffer
             buffer = buffer[19:]
         else:
-            # Not aligned, remove first byte and try again
             buffer = buffer[1:]
