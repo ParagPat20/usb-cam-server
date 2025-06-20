@@ -91,7 +91,7 @@ def main():
         d2 = None if d2 == 0xFFFF else d2
         d8 = None if d8 == 0xFFFF else d8
         print(f"D1 (Sector 2): {d1}, D2 (Sector 3): {d2}, D8 (Sector 1): {d8}")
-        time.sleep(0.01)
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
