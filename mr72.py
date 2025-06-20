@@ -77,20 +77,16 @@ def main():
     ser = serial.Serial('/dev/ttyS0', 115200, timeout=1)
     print("Listening for MR72 frames (raw output)...")
     while True:
-        b = ser.read(1)
-        if b == b'\x54':  # 'T'
-            b2 = ser.read(1)
-            if b2 == b'\x48':  # 'H'
-                rest = ser.read(17)  # 16 data + 1 CRC
-                if len(rest) == 17:
-                    frame = b'\x54\x48' + rest
-                    # Print raw frame in hex
-                    print("Raw frame:", frame.hex(' '))
-                    parse_and_print(frame)
-                else:
-                    print("Incomplete frame")
+        frame = ser.read(19)
+        if len(frame) != 19:
+            print("Incomplete frame")
+            continue
+        if frame[0] == 0x54 and frame[1] == 0x48:
+            print("Raw frame:", frame.hex(' '))
+            parse_and_print(frame)
+        else:
+            print("Header mismatch")
         time.sleep(0.1)
-            # else: keep searching for header
 
 if __name__ == "__main__":
     main()
