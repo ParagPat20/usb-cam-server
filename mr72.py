@@ -57,7 +57,10 @@ def parse_and_print(frame):
     if frame[0] != 0x54 or frame[1] != 0x48:
         print("Header mismatch")
         return
-    if crc8(frame[:18]) != frame[18]:
+    calculated_crc = crc8(frame[:18])
+    frame_crc = frame[18]
+    print(f"CRC8 calculated: {hex(calculated_crc)}, CRC8 from frame: {hex(frame_crc)}")
+    if calculated_crc != frame_crc:
         print("CRC error")
         return
     fields = [int.from_bytes(frame[2+i*2:4+i*2], 'big') for i in range(8)]
