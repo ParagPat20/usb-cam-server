@@ -11,7 +11,12 @@ def crc_crc8(buffer):
     return crc
 
 def parse_sector2(frame):
+    if len(frame) != 19:
+        return None
 
+    # Check header
+    if frame[0] != 0x54 or frame[1] != 0x48:
+        return None
 
     # Sector 2 is bytes 2 (MSB) and 3 (LSB)
     msb, lsb = frame[2], frame[3]
