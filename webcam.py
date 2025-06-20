@@ -13,7 +13,8 @@ from fractions import Fraction
 from aiohttp import web
 from aiohttp_cors import setup as cors_setup, ResourceOptions, CorsViewMixin
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCConfiguration, RTCIceServer, RTCIceCandidate
-from aiortc.contrib.media import MediaPlayer, MediaRelay, MediaStreamTrack
+from aiortc.contrib.media import MediaPlayer, MediaRelay
+from aiortc.mediastreams import MediaStreamTrack
 from aiortc.rtcrtpsender import RTCRtpSender
 from datetime import datetime
 import threading
@@ -146,6 +147,7 @@ class WebcamTrack(MediaStreamTrack):
                 #     save_queue.put(frame.copy())
                 # Convert BGR to RGBA for streaming
                 frame_rgba = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+                frame_rgba = frame_rgba.astype('uint8')  # Ensure correct dtype
                 pts = time.time() * 1000000
                 new_frame = av.VideoFrame.from_ndarray(frame_rgba, format='rgba')
                 new_frame.pts = int(pts)
@@ -239,7 +241,9 @@ async def webrtc(request):
                 if diag.connection_attempts < 3:  # Try up to 3 times
                     try:
                         logger.info("Attempting to restart ICE...")
-                        await pc.restartIce()
+                        # Create new offer to restart ICE
+                        offer = await pc.createOffer()
+                        await pc.setLocalDescription(offer)
                     except Exception as e:
                         diag.log_error(f"Failed to restart ICE: {e}")
                         await pc.close()
@@ -254,7 +258,9 @@ async def webrtc(request):
             if pc.iceConnectionState == "disconnected":
                 logger.warning("ICE disconnected, attempting to restart...")
                 try:
-                    await pc.restartIce()
+                    # Create new offer to restart ICE
+                    offer = await pc.createOffer()
+                    await pc.setLocalDescription(offer)
                 except Exception as e:
                     diag.log_error(f"Failed to restart ICE: {e}")
 
@@ -299,7 +305,7 @@ async def webrtc(request):
                     "sdp": pc.localDescription.sdp,
                     "type": pc.localDescription.type,
                     "id": pc_id,
-                    "iceServers": [{"urls": server.urls, "username": getattr(server, "username", None), "credential": getattr(server, "credential", None)} for server in configuration.iceServers],
+                    "iceServers": [{"urls": server.urls, "username": getattr(server, "username", None), "credential": getattr(server, "credential", None)} for server in (configuration.iceServers or [])],
                     "diagnostics": diag.get_stats()
                 }, ensure_ascii=False)
             )
@@ -321,6 +327,13 @@ async def webrtc(request):
             content_type="application/json",
             text=json.dumps({"status": "success"}, ensure_ascii=False)
         )
+    
+    # Default response for unhandled cases
+    return web.Response(
+        content_type="application/json",
+        text=json.dumps({"error": "Invalid request type"}, ensure_ascii=False),
+        status=400
+    )
 
 async def get_diagnostics(request):
     """Endpoint to get connection diagnostics"""
