@@ -18,8 +18,6 @@ def parse_sector(frame, msb_index, lsb_index):
         return None
     msb, lsb = frame[msb_index], frame[lsb_index]
     val = (msb << 8) | lsb
-    if val == 0xFFFF:
-        return None  # Invalid data
     return val
 
 # Setup serial (adjust port and baudrate if needed)
