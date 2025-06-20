@@ -1,10 +1,5 @@
 import serial
 
-ser = serial.Serial("/dev/ttyS0", 115200, timeout=1)
-
-HEADER = bytes([0x54, 0x48])
-FRAME_LEN = 19
-
 def reflect_byte(b):
     return int('{:08b}'.format(b)[::-1], 2)
 
@@ -23,24 +18,36 @@ def crc8_variant(buf, polynomial=0x07, initial_value=0x00, reflect_in=False, ref
         crc = reflect_byte(crc)
     return crc ^ final_xor
 
-buffer = b''
+ser = serial.Serial("/dev/ttyS0", 115200, timeout=1)
+
+HEADER = bytes([0x54, 0x48])
+FRAME_LEN = 19
 
 polys = [0x07, 0x31, 0x1D, 0x9B]
 inits = [0x00, 0xFF]
+reflects = [False, True]
+final_xors = [0x00, 0xFF]
+data_lens = [17, 18, 19]
+
+buffer = b''
 
 while True:
     buffer += ser.read(64)
     while len(buffer) >= FRAME_LEN:
         if buffer[0:2] == HEADER:
             frame = buffer[:FRAME_LEN]
-            data = frame[:18]
             recv_crc = frame[18]
             print(f"Frame: {frame.hex()}")
-            for poly in polys:
-                for init in inits:
-                    calc_crc = crc8_variant(data, polynomial=poly, initial_value=init)
-                    match = calc_crc == recv_crc
-                    print(f"  Poly: {hex(poly)}, Init: {hex(init)}, Calc CRC: {hex(calc_crc)}, Recv CRC: {hex(recv_crc)}, Match: {match}")
+            for data_len in data_lens:
+                data = frame[:data_len]
+                for poly in polys:
+                    for init in inits:
+                        for ref_in in reflects:
+                            for ref_out in reflects:
+                                for fxor in final_xors:
+                                    calc_crc = crc8_variant(data, polynomial=poly, initial_value=init, reflect_in=ref_in, reflect_out=ref_out, final_xor=fxor)
+                                    match = calc_crc == recv_crc
+                                    print(f"  Len:{data_len} Poly:{hex(poly)} Init:{hex(init)} RefIn:{ref_in} RefOut:{ref_out} FXor:{hex(fxor)} Calc:{hex(calc_crc)} Recv:{hex(recv_crc)} Match:{match}")
             print("-"*60)
             buffer = buffer[FRAME_LEN:]
         else:
