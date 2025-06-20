@@ -27,12 +27,6 @@ ser = serial.Serial("/dev/ttyS0", 115200, timeout=1)
 
 while True:
     frame = ser.read(19)
-    sector2 = parse_sector(frame, 2, 3)
     sector3 = parse_sector(frame, 4, 5)
-    sector1 = parse_sector(frame, 16, 17)
-    if sector1 is not None:
-        print(f"Sector 1: {sector1} mm")
-    if sector2 is not None:
-        print(f"Sector 2: {sector2} mm")
     if sector3 is not None:
         print(f"Sector 3: {sector3} mm")
