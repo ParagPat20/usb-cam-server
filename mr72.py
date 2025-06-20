@@ -10,13 +10,15 @@ def crc_crc8(buffer):
         crc = crc8_table[(crc ^ b) & 0xFF]
     return crc
 
-def parse_sector1(frame):
+def parse_sectors(frame):
     # frame is 19 bytes, already validated
-    msb, lsb = frame[16], frame[17]
-    val = (msb << 8) | lsb
-    if val == 0xFFFF:
-        return None
-    return val
+    def parse_distance(msb, lsb):
+        val = (msb << 8) | lsb
+        return None if val == 0xFFFF else val
+    sector2 = parse_distance(frame[2], frame[3])
+    sector3 = parse_distance(frame[4], frame[5])
+    sector1 = parse_distance(frame[16], frame[17])
+    return sector1, sector2, sector3
 
 def is_valid_frame(frame):
     return (
@@ -37,9 +39,8 @@ while True:
     while len(buffer) >= 19:
         frame = buffer[:19]
         if is_valid_frame(frame):
-            sector1 = parse_sector1(frame)
-            if sector1 is not None:
-                print(f"Sector 1: {sector1} mm")
+            sector1, sector2, sector3 = parse_sectors(frame)
+            print(f"Sector 1: {sector1} mm, Sector 2: {sector2} mm, Sector 3: {sector3} mm")
             buffer = buffer[19:]
         else:
             buffer = buffer[1:]
