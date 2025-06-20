@@ -57,10 +57,12 @@ def parse_and_print(frame):
     if frame[0] != 0x54 or frame[1] != 0x48:
         print("Header mismatch")
         return
-    calculated_crc = crc8(frame[:18])
+    calculated_crc_full = crc8(frame[:18])
+    calculated_crc_data = crc8(frame[2:18])
+    calculated_crc_0_17 = crc8(frame[:17])
     frame_crc = frame[18]
-    print(f"CRC8 calculated: {hex(calculated_crc)}, CRC8 from frame: {hex(frame_crc)}")
-    if calculated_crc != frame_crc:
+    print(f"CRC8 full: {hex(calculated_crc_full)}, CRC8 data: {hex(calculated_crc_data)}, CRC8 0-17: {hex(calculated_crc_0_17)}, CRC8 from frame: {hex(frame_crc)}")
+    if calculated_crc_full != frame_crc:
         print("CRC error")
         return
     fields = [int.from_bytes(frame[2+i*2:4+i*2], 'big') for i in range(8)]
@@ -85,8 +87,9 @@ def main():
             print("Raw frame:", frame.hex(' '))
             parse_and_print(frame)
         else:
-            print("Header mismatch")
-        time.sleep(0.1)
+            # Resync: read one byte and try again
+            ser.read(1)
+        time.sleep(0.01)
 
 if __name__ == "__main__":
     main()
