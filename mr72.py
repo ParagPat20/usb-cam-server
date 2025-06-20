@@ -77,18 +77,20 @@ def parse_and_print(frame):
 
 def main():
     ser = serial.Serial('/dev/ttyS0', 115200, timeout=1)
-    print("Listening for MR72 frames (raw output)...")
+    print("Listening for MR72 frames (distance only)...")
     while True:
         frame = ser.read(19)
         if len(frame) != 19:
             print("Incomplete frame")
             continue
-        if frame[0] == 0x54 and frame[1] == 0x48:
-            print("Raw frame:", frame.hex(' '))
-            parse_and_print(frame)
-        else:
-            # Resync: read one byte and try again
-            ser.read(1)
+        # D1: bytes 2-3, D2: bytes 4-5, D8: bytes 16-17
+        d1 = int.from_bytes(frame[2:4], 'big')
+        d2 = int.from_bytes(frame[4:6], 'big')
+        d8 = int.from_bytes(frame[16:18], 'big')
+        d1 = None if d1 == 0xFFFF else d1
+        d2 = None if d2 == 0xFFFF else d2
+        d8 = None if d8 == 0xFFFF else d8
+        print(f"D1 (Sector 2): {d1}, D2 (Sector 3): {d2}, D8 (Sector 1): {d8}")
         time.sleep(0.01)
 
 if __name__ == "__main__":
