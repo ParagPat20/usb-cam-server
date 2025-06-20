@@ -239,11 +239,11 @@ def initialize_camera():
     try:
         # Try V4L2 first (Linux)
         try:
-            cap = cv2.VideoCapture(2)
             
+            cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
         except:
-              # Fallback to default backend
-            cap = cv2.VideoCapture(2, cv2.CAP_V4L2)
+            # Fallback to default backend
+            cap = cv2.VideoCapture(0)
         if cap.isOpened():
             # Set resolution
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
