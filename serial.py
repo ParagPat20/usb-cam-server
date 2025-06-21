@@ -1,41 +1,45 @@
-import serial
+#!/usr/bin/env python3
 import time
-from serial.tools import list_ports
+from pymavlink import mavutil
 
-# Known USB VID/PIDs (update as needed)
-FC_VID_PID = (0x0483, 0x5740)    # Example: STMicro STM32 (common in FCs)
-MR72_VID_PID = (0x10C4, 0xEA60)  # Example: CP210x chip used by MR72
+def find_mavlink_ports(baud=115200, timeout=1.0):
+    '''
+    Scan serial ports for MAVLink responders.
+    Returns two lists: [ports with heartbeat], [the rest].
+    '''
+    heartbeat_ports = []
+    other_ports = []
+    ports = mavutil.auto_detect_serial_unix()  # Unix-compatible port list
 
-def find_ports_by_vid_pid(vid_pid):
-    matching = []
-    for port in list_ports.comports():
-        if (port.vid, port.pid) == vid_pid:
-            matching.append(port.device)
-    return matching
+    print(f"Scanning ports: {[p.device for p in ports]}")
+    for p in ports:
+        dev = p.device
+        print(f"→ Testing {dev}...", end='', flush=True)
+        try:
+            m = mavutil.mavlink_connection(
+                dev, baud=baud, timeout=timeout, autoreconnect=False
+            )
+            t0 = time.time()
+            while time.time() - t0 < timeout:
+                msg = m.recv_match(type='HEARTBEAT', blocking=False)
+                if msg:
+                    print(" HEARTBEAT!")
+                    heartbeat_ports.append(dev)
+                    m.close()
+                    break
+                time.sleep(0.1)
+            else:
+                print(" no heartbeat.")
+                other_ports.append(dev)
+                m.close()
+        except Exception as e:
+            print(f" error: {e}")
+            other_ports.append(dev)
 
-def auto_detect_ports():
-    fc_ports = find_ports_by_vid_pid(FC_VID_PID)
-    mr_ports = find_ports_by_vid_pid(MR72_VID_PID)
+    return heartbeat_ports, other_ports
 
-    if not fc_ports or not mr_ports:
-        print("VID/PID detection incomplete. Falling back to handshake method.")
-        all_ports = [p.device for p in list_ports.comports()]
-        for p in all_ports:
-            try:
-                ser = serial.Serial(p, 115200, timeout=0.5)
-                ser.write(b'\n')
-                resp = ser.readline()
-                ser.close()
-                if b'MAV' in resp:  # common in MAVLink FC responses
-                    fc_ports.append(p)
-                elif resp:
-                    mr_ports.append(p)
-            except:
-                pass
-
-    return fc_ports[:1], mr_ports[:1]  # return first found of each
-
-if __name__ == "__main__":
-    fc, mr = auto_detect_ports()
-    print(f"Flight Controller port(s): {fc or 'None found'}")
-    print(f"MR72 sensor port(s): {mr or 'None found'}")
+if __name__ == '__main__':
+    fc_ports, sensor_ports = find_mavlink_ports()
+    print()
+    print("✅ MAVLink Flight Controller port(s):", fc_ports)
+    print("🔍 Other detected port(s):", sensor_ports)
