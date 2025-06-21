@@ -4,7 +4,7 @@ from pymavlink import mavutil
 
 # UART and FC settings
 MR72_PORT, MR72_BAUD = '/dev/ttyS0', 115200
-FC_PORT, FC_BAUD = '/dev/ttyACM1', 115200
+FC_PORT, FC_BAUD = '/dev/ttyACM3', 115200
 FAKE_DISTANCE, MIN_DISTANCE, MAX_DISTANCE = 3000, 30, 3000
 SECTOR_ORIENTATION = {1:1,2:0,3:7,4:6,5:5,6:4,7:3,8:2}
 
