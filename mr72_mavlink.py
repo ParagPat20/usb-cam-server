@@ -6,33 +6,27 @@ from pymavlink import mavutil
 MR72_PORT, MR72_BAUD = '/dev/ttyS0', 115200
 FC_PORT, FC_BAUD = '/dev/ttyACM3', 115200
 
-# Distance sensor constants (in cm)
-FAKE_DISTANCE = 1000  # yes, this is 10 m
+# Distance sensor constants (cm)
+FAKE_DISTANCE = 1000
 MIN_DISTANCE = 30
 MAX_DISTANCE = 3000
 
-# Map sensor sectors to MAVLink orientations 0–7
+# Map to MAVLink orientations (0–7)
 SECTOR_ORIENTATION = {
-    2: 0,  # front-center → 0°
-    1: 1,  # front-left   → 45°
-    8: 2,  # left         → 90°
-    7: 3,  # back-left    → 135°
-    6: 4,  # back-center  → 180°
-    5: 5,  # back-right   → 225°
-    4: 6,  # right        → 270°
-    3: 7   # front-right  → 315°
+    2: 0,  # front-center
+    1: 1,  # front-left
+    8: 2,  # left
+    7: 3,  # back-left
+    6: 4,  # back
+    5: 5,  # back-right
+    4: 6,  # right
+    3: 7   # front-right
 }
 
 def parse_packet(pkt: bytes):
-    print(f"Got full packet ({len(pkt)} bytes): {pkt.hex()}")
-    if len(pkt) != 19 or not pkt.startswith(b'TH'):
-        print(" → Discarding invalid packet")
-        return None
-
-    # MR72 gives mm, convert to cm
-    d2 = int.from_bytes(pkt[2:4], 'big')   # center
-    d3 = int.from_bytes(pkt[4:6], 'big')   # front-right
-    d8 = int.from_bytes(pkt[16:18], 'big') # front-left
+    d2 = int.from_bytes(pkt[2:4], 'big')
+    d3 = int.from_bytes(pkt[4:6], 'big')
+    d8 = int.from_bytes(pkt[16:18], 'big')
 
     def mm_to_cm(v):
         return v // 10 if v != 0xFFFF else FAKE_DISTANCE
@@ -43,14 +37,15 @@ def parse_packet(pkt: bytes):
             mm_to_cm(d2) if sid == 2 else
             mm_to_cm(d3) if sid == 3 else
             FAKE_DISTANCE
-        )
-        for sid in range(1, 9)
+        ) for sid in range(1, 9)
     }
 
-    print(f" → Parsed distances: S1={distances[1]}cm (45°L), "
-          f"S2={distances[2]}cm (0°), S3={distances[3]}cm (315°R)")
-    return distances
+    # Print full converted data
+    print("Converted sector distances (cm):")
+    for sid, dist in distances.items():
+        print(f"  Sector {sid}: {dist} cm")
 
+    return distances
 def send_heartbeat(master):
     master.mav.heartbeat_send(
         type=6, autopilot=8, base_mode=0,
