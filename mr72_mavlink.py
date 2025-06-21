@@ -31,11 +31,20 @@ def parse_packet(pkt):
     print("[RAW]    " + ", ".join(f"S{sid}={raw[sid]}" for sid in range(1,9)))
     return raw
 
+EMA_ALPHA = 0.7  # more responsive
+ema = {sid: FAKE_DISTANCE for sid in range(1,9)}
+ema2 = ema.copy()
+
 def smooth(raw):
     for sid, val in raw.items():
-        ema[sid] = int(ema[sid] + EMA_ALPHA * (val - ema[sid]))
-    print("[FILTER]" + ", ".join(f"S{sid}={ema[sid]}" for sid in range(1,9)))
-    return ema.copy()
+        ema[sid] = EMA_ALPHA * val + (1-EMA_ALPHA) * ema[sid]
+        ema2[sid] = EMA_ALPHA * ema[sid] + (1-EMA_ALPHA) * ema2[sid]
+    filtered = {}
+    for sid in raw:
+        # Use either EMA or DEMA:
+        filtered[sid] = int(2*ema[sid] - ema2[sid])
+    print("[SMOOTHED]", filtered)
+    return filtered
 
 def send_distances(mav, dist):
     ts = time.time()
