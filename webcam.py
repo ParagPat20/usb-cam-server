@@ -189,12 +189,16 @@ class VideoRecorder:
 def recording_worker():
     global current_recording, recording_running, preferred_codec
     
+    # Create video directory if it doesn't exist
+    video_dir = os.path.join(ROOT, "video")
+    os.makedirs(video_dir, exist_ok=True)
+    
     while recording_running:
         try:
-            # Create new recording file with timestamp
+            # Create new recording file with timestamp in video folder
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # Default to mp4, but VideoRecorder will adjust extension if needed
-            filename = os.path.join(ROOT, f"recording_{timestamp}.mp4")
+            filename = os.path.join(video_dir, f"recording_{timestamp}.mp4")
             
             # Start new recording
             with recording_lock:
