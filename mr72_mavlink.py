@@ -17,15 +17,16 @@ FAKE_DISTANCE = 3000
 SENSOR_ID = 1  # Arbitrary, must be unique if multiple
 
 # Sector mappings (sector_id: orientation in degrees)
+# Mapping of sector_id to MAV_SENSOR_ORIENTATION enum values
 SECTOR_ANGLES = {
-    1: 45,   # Front-Left
-    2: 90,   # Front-Center
-    3: 135,  # Front-Right
-    4: 180,  # Rear-Right (fake)
-    5: 225,  # Rear-Center (fake)
-    6: 270,  # Rear-Left (fake)
-    7: 315,  # Left-Back (fake)
-    8: 0     # Front (fake)
+    1: 8,   # MAV_SENSOR_ROTATION_YAW_45 (Front-Left)
+    2: 0,   # MAV_SENSOR_ROTATION_NONE (Forward)
+    3: 7,   # MAV_SENSOR_ROTATION_YAW_135 (Front-Right)
+    4: 4,   # MAV_SENSOR_ROTATION_YAW_180 (Back)
+    5: 5,   # MAV_SENSOR_ROTATION_YAW_225
+    6: 6,   # MAV_SENSOR_ROTATION_YAW_270
+    7: 3,   # MAV_SENSOR_ROTATION_YAW_315
+    8: 1    # MAV_SENSOR_ROTATION_YAW_90 (Right)
 }
 
 
@@ -56,16 +57,20 @@ def parse_mr72_packet(packet: bytes):
         return None
 
 
-def send_distance_sensor(master, current_time_us, distance_cm, orientation_deg):
+def send_distance_sensor(master, current_time_ms, distance_cm, orientation):
     master.mav.distance_sensor_send(
-        time_boot_ms=current_time_us // 1000,
-        min_distance=30,             # 30 cm min range
-        max_distance=3000,           # 3000 cm max range
+        time_boot_ms=current_time_ms,
+        min_distance=30,
+        max_distance=3000,
         current_distance=distance_cm,
-        type=1,                      # LASER or unknown
-        id=SENSOR_ID,
-        orientation=orientation_deg,  # MAV_SENSOR_ROTATION_* enum (degrees supported)
-        covariance=255               # Unknown covariance
+        type=0,                    # MAV_DISTANCE_SENSOR_LASER
+        id=SENSOR_ID,             # Must be in range 0–255
+        orientation=orientation,  # Must be in range 0–255 (MAV enum)
+        covariance=255,           # Unknown
+        horizontal_fov=0,
+        vertical_fov=0,
+        quaternion=[0, 0, 0, 0],
+        signal_quality=255
     )
 
 
