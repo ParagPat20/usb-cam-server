@@ -9,6 +9,7 @@ import time
 import threading
 import logging
 from pymavlink import mavutil
+import array
 
 # Configure logging
 logging.basicConfig(
@@ -34,14 +35,19 @@ class MR72Radar:
         self.uart_ser = None
         self.mavlink_connection = None
         
+        # Track boot time for proper time_boot_ms calculation
+        self.boot_time = time.time()
+        
         # Data storage
         self.latest_data = {
-            'sector1': self.INVALID_DISTANCE,  # 0 degrees
-            'sector2': self.INVALID_DISTANCE,  # 90 degrees  
-            'sector3': self.INVALID_DISTANCE,  # 180 degrees
-            'sector4': self.INVALID_DISTANCE,  # 270 degrees
-            'sector5': self.INVALID_DISTANCE,  # 315 degrees
-            'sector6': self.INVALID_DISTANCE,  # 45 degrees
+            'sector1': None,  # 0 degrees
+            'sector2': None,  # 90 degrees  
+            'sector3': None,  # 180 degrees
+            'sector_90': None,  # 90 degree sector
+            'sector_135': None,  # 135 degree sector
+            'sector_180': None,  # 180 degree sector
+            'sector_225': None,  # 225 degree sector
+            'sector_270': None,  # 270 degree sector
         }
         
         # Threading
@@ -49,8 +55,18 @@ class MR72Radar:
         self.uart_thread = None
         self.mavlink_thread = None
         
-        # MAVLink message counters
-        self.distance_sensor_id = 0
+    def parse_sector(self, frame, msb_index, lsb_index):
+        """Parse individual sector from MR72 frame"""
+        if len(frame) != self.FRAME_LEN:
+            return None
+        # Check header
+        if frame[0] != 0x54 or frame[1] != 0x48:
+            return None
+        msb, lsb = frame[msb_index], frame[lsb_index]
+        val = (msb << 8) | lsb
+        if val == 0xFFFF:
+            return None  # Invalid data
+        return val
         
     def connect_uart(self):
         """Connect to MR72 radar via UART"""
@@ -72,20 +88,16 @@ class MR72Radar:
     def connect_mavlink(self):
         """Connect to flight controller via MAVLink"""
         try:
-            # Connect to flight controller using correct serial connection format
             logger.info(f"Attempting to connect to MAVLink on: {self.mavlink_port} at {self.mavlink_baud} baud")
             self.mavlink_connection = mavutil.mavlink_connection(
                 self.mavlink_port,
-                baud=self.mavlink_baud,
-                source_system=1,
-                source_component=1,
-                autoreconnect=True,
-                retries=3
+                baud=self.mavlink_baud
             )
+            
             # Wait for heartbeat with timeout
             logger.info("Waiting for flight controller heartbeat...")
             try:
-                self.mavlink_connection.wait_heartbeat(timeout=10)
+                self.mavlink_connection.wait_heartbeat()
                 logger.info(f"Connected to flight controller on {self.mavlink_port}")
                 return True
             except Exception as e:
@@ -95,78 +107,93 @@ class MR72Radar:
             logger.error(f"Failed to connect to flight controller: {e}")
             return False
     
-    def parse_mr72_frame(self, frame):
-        """Parse MR72 radar frame according to protocol"""
-        if len(frame) != self.FRAME_LEN:
-            return None
-        
-        # Check header
-        if frame[0:2] != self.HEADER:
-            return None
-        
-        try:
-            # Parse sectors according to protocol
-            # D1: Sector 2 (90 degrees) - bytes 2-3
-            sector2 = (frame[2] << 8) | frame[3]
-            
-            # D2: Sector 3 (180 degrees) - bytes 4-5  
-            sector3 = (frame[4] << 8) | frame[5]
-            
-            # D3: 90 degree sector - bytes 6-7
-            sector_90 = (frame[6] << 8) | frame[7]
-            
-            # D4: 135 degree sector - bytes 8-9
-            sector_135 = (frame[8] << 8) | frame[9]
-            
-            # D5: 180 degree sector - bytes 10-11
-            sector_180 = (frame[10] << 8) | frame[11]
-            
-            # D6: 225 degree sector - bytes 12-13
-            sector_225 = (frame[12] << 8) | frame[13]
-            
-            # D7: 270 degree sector - bytes 14-15
-            sector_270 = (frame[14] << 8) | frame[15]
-            
-            # D8: Sector 1 (0 degrees) - bytes 16-17
-            sector1 = (frame[16] << 8) | frame[17]
-            
-            # Skip CRC8 check as requested
-            
-            return {
-                'sector1': sector1 if sector1 != self.INVALID_DISTANCE else None,
-                'sector2': sector2 if sector2 != self.INVALID_DISTANCE else None,
-                'sector3': sector3 if sector3 != self.INVALID_DISTANCE else None,
-                'sector_90': sector_90 if sector_90 != self.INVALID_DISTANCE else None,
-                'sector_135': sector_135 if sector_135 != self.INVALID_DISTANCE else None,
-                'sector_180': sector_180 if sector_180 != self.INVALID_DISTANCE else None,
-                'sector_225': sector_225 if sector_225 != self.INVALID_DISTANCE else None,
-                'sector_270': sector_270 if sector_270 != self.INVALID_DISTANCE else None,
-            }
-            
-        except Exception as e:
-            logger.error(f"Error parsing MR72 frame: {e}")
-            return None
-    
-    def send_distance_sensor_mavlink(self, distance_mm, orientation, sensor_id):
+    def send_distance_data(self, sector1, sector2, sector3, sector_90, sector_135, sector_180, sector_225, sector_270):
         """Send distance sensor data via MAVLink"""
         if not self.mavlink_connection:
             return
         
         try:
-            # Convert mm to cm for MAVLink
-            distance_cm = distance_mm / 10.0
+            # Calculate time since boot in milliseconds
+            time_boot_ms = int((time.time() - self.boot_time) * 1000) & 0xFFFFFFFF
             
-            # Send DISTANCE_SENSOR message
-            self.mavlink_connection.mav.distance_sensor_send(
-                time_boot_ms=int(time.time() * 1000),
-                min_distance=10,  # 10cm minimum
-                max_distance=10000,  # 100m maximum
-                current_distance=int(distance_cm),
-                type=0,  # MAV_DISTANCE_SENSOR_ULTRASOUND
-                id=sensor_id,
-                orientation=orientation,
-                covariance=0
-            )
+            # Convert mm to cm and ensure values are within bounds
+            def safe_convert(val):
+                if val is None:
+                    return 0
+                # Convert to cm and ensure it's within uint16 range (0-65535)
+                return min(65535, max(0, val // 10))
+            
+            # Common parameters
+            min_distance = 0  # Minimum distance the sensor can measure in cm
+            max_distance = 1000  # Maximum distance the sensor can measure in cm
+            
+            # Send each sector as a separate DISTANCE_SENSOR message
+            if sector1 is not None:
+                self.mavlink_connection.mav.distance_sensor_send(
+                    time_boot_ms,  # ms since system boot
+                    min_distance,  # Minimum distance in cm
+                    max_distance,  # Maximum distance in cm
+                    safe_convert(sector1),  # Current distance reading
+                    0,  # Sensor type (0 = MAV_DISTANCE_SENSOR_LASER)
+                    1,  # Sensor ID (1 for sector 1)
+                    0,  # Orientation (0 = MAV_SENSOR_ROTATION_NONE for forward)
+                    255  # Covariance in cm (255 if unknown)
+                )
+            
+            if sector2 is not None:
+                self.mavlink_connection.mav.distance_sensor_send(
+                    time_boot_ms,
+                    min_distance,
+                    max_distance,
+                    safe_convert(sector2),
+                    0,  # Sensor type (0 = MAV_DISTANCE_SENSOR_LASER)
+                    2,  # Sensor ID (2 for sector 2)
+                    0,  # Orientation (0 = MAV_SENSOR_ROTATION_NONE for forward)
+                    255  # Covariance in cm (255 if unknown)
+                )
+            
+            if sector3 is not None:
+                self.mavlink_connection.mav.distance_sensor_send(
+                    time_boot_ms,
+                    min_distance,
+                    max_distance,
+                    safe_convert(sector3),
+                    0,  # Sensor type (0 = MAV_DISTANCE_SENSOR_LASER)
+                    3,  # Sensor ID (3 for sector 3)
+                    0,  # Orientation (0 = MAV_SENSOR_ROTATION_NONE for forward)
+                    255  # Covariance in cm (255 if unknown)
+                )
+            
+            # Send other sectors as placeholders (mostly None)
+            if sector_90 is not None:
+                self.mavlink_connection.mav.distance_sensor_send(
+                    time_boot_ms, min_distance, max_distance, safe_convert(sector_90),
+                    0, 4, 0, 255  # Sensor ID 4
+                )
+            
+            if sector_135 is not None:
+                self.mavlink_connection.mav.distance_sensor_send(
+                    time_boot_ms, min_distance, max_distance, safe_convert(sector_135),
+                    0, 5, 0, 255  # Sensor ID 5
+                )
+            
+            if sector_180 is not None:
+                self.mavlink_connection.mav.distance_sensor_send(
+                    time_boot_ms, min_distance, max_distance, safe_convert(sector_180),
+                    0, 6, 0, 255  # Sensor ID 6
+                )
+            
+            if sector_225 is not None:
+                self.mavlink_connection.mav.distance_sensor_send(
+                    time_boot_ms, min_distance, max_distance, safe_convert(sector_225),
+                    0, 7, 0, 255  # Sensor ID 7
+                )
+            
+            if sector_270 is not None:
+                self.mavlink_connection.mav.distance_sensor_send(
+                    time_boot_ms, min_distance, max_distance, safe_convert(sector_270),
+                    0, 8, 0, 255  # Sensor ID 8
+                )
             
         except Exception as e:
             logger.error(f"Error sending distance sensor data: {e}")
@@ -220,35 +247,46 @@ class MR72Radar:
     
     def uart_reader_thread(self):
         """Thread to continuously read UART data from MR72"""
-        buffer = b''
-        
         while self.running:
             try:
                 if self.uart_ser and self.uart_ser.is_open:
-                    # Read available data
-                    data = self.uart_ser.read(64)
-                    if data:
-                        buffer += data
+                    frame = self.uart_ser.read(19)
+                    if len(frame) == 19:  # Make sure we got a complete frame
+                        # Parse sectors according to protocol
+                        sector2 = self.parse_sector(frame, 2, 3)  # D1: Sector 2 (90 degrees)
+                        sector3 = self.parse_sector(frame, 4, 5)  # D2: Sector 3 (180 degrees)
+                        sector_90 = self.parse_sector(frame, 6, 7)  # D3: 90 degree sector
+                        sector_135 = self.parse_sector(frame, 8, 9)  # D4: 135 degree sector
+                        sector_180 = self.parse_sector(frame, 10, 11)  # D5: 180 degree sector
+                        sector_225 = self.parse_sector(frame, 12, 13)  # D6: 225 degree sector
+                        sector_270 = self.parse_sector(frame, 14, 15)  # D7: 270 degree sector
+                        sector1 = self.parse_sector(frame, 16, 17)  # D8: Sector 1 (0 degrees)
                         
-                        # Process complete frames
-                        while len(buffer) >= self.FRAME_LEN:
-                            # Look for header
-                            if buffer[0:2] == self.HEADER:
-                                # Extract frame
-                                frame = buffer[:self.FRAME_LEN]
-                                buffer = buffer[self.FRAME_LEN:]
-                                
-                                # Parse frame
-                                parsed_data = self.parse_mr72_frame(frame)
-                                if parsed_data:
-                                    # Update latest data
-                                    with threading.Lock():
-                                        self.latest_data.update(parsed_data)
-                                    
-                                    logger.debug(f"MR72 Data: {parsed_data}")
-                            else:
-                                # Remove invalid byte
-                                buffer = buffer[1:]
+                        # Update latest data
+                        with threading.Lock():
+                            self.latest_data = {
+                                'sector1': sector1,
+                                'sector2': sector2,
+                                'sector3': sector3,
+                                'sector_90': sector_90,
+                                'sector_135': sector_135,
+                                'sector_180': sector_180,
+                                'sector_225': sector_225,
+                                'sector_270': sector_270,
+                            }
+                        
+                        logger.debug(f"MR72 Data: {self.latest_data}")
+                        
+                        # Display data
+                        output = []
+                        if sector1 is not None:
+                            output.append(f"Sector 1: {sector1} mm")
+                        if sector2 is not None:
+                            output.append(f"Sector 2: {sector2} mm")
+                        if sector3 is not None:
+                            output.append(f"Sector 3: {sector3} mm")
+                        if output:
+                            logger.info(" | ".join(output))
                 else:
                     time.sleep(0.1)
                     
@@ -261,33 +299,16 @@ class MR72Radar:
         while self.running:
             try:
                 if self.mavlink_connection:
-                    # Send individual distance sensor messages for sectors 1, 2, 3
+                    # Send individual distance sensor messages for all sectors
                     with threading.Lock():
                         data = self.latest_data.copy()
                     
-                    # Send sector 1 (0 degrees)
-                    if data['sector1'] is not None:
-                        self.send_distance_sensor_mavlink(
-                            data['sector1'], 
-                            0,  # MAV_SENSOR_ROTATION_NONE
-                            1
-                        )
-                    
-                    # Send sector 2 (90 degrees)
-                    if data['sector2'] is not None:
-                        self.send_distance_sensor_mavlink(
-                            data['sector2'], 
-                            1,  # MAV_SENSOR_ROTATION_90_DEG
-                            2
-                        )
-                    
-                    # Send sector 3 (180 degrees)
-                    if data['sector3'] is not None:
-                        self.send_distance_sensor_mavlink(
-                            data['sector3'], 
-                            2,  # MAV_SENSOR_ROTATION_180_DEG
-                            3
-                        )
+                    # Send distance sensor data
+                    self.send_distance_data(
+                        data['sector1'], data['sector2'], data['sector3'],
+                        data['sector_90'], data['sector_135'], data['sector_180'],
+                        data['sector_225'], data['sector_270']
+                    )
                     
                     # Send comprehensive obstacle distance message
                     self.send_obstacle_distance_mavlink(data)
