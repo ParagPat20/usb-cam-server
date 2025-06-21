@@ -25,8 +25,8 @@ if [ ! -e "/dev/ttyS0" ]; then
 fi
 
 # Check if MAVLink port exists
-if [ ! -e "/dev/ttyACM1" ]; then
-    echo "Warning: /dev/ttyACM1 not found. Make sure flight controller is connected."
+if [ ! -e "/dev/ttyACM0" ]; then
+    echo "Warning: /dev/ttyACM0 not found. Make sure flight controller is connected."
 fi
 
 # Set up logging directory
@@ -38,7 +38,7 @@ echo "Starting MR72 radar bridge..."
 python3 mr72_mavlink.py \
     --uart-port /dev/ttyS0 \
     --uart-baud 115200 \
-    --mavlink-port /dev/ttyACM1 \
+    --mavlink-port /dev/ttyACM0 \
     --mavlink-baud 115200 \
     --verbose \
     2>&1 | tee $LOG_DIR/radar_bridge.log

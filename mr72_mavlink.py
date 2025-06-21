@@ -72,18 +72,16 @@ class MR72Radar:
     def connect_mavlink(self):
         """Connect to flight controller via MAVLink"""
         try:
-            # Connect to flight controller using proper serial connection string
-            connection_string = f"serial:{self.mavlink_port}:{self.mavlink_baud}"
-            logger.info(f"Attempting to connect to MAVLink on: {connection_string}")
-            
+            # Connect to flight controller using correct serial connection format
+            logger.info(f"Attempting to connect to MAVLink on: {self.mavlink_port} at {self.mavlink_baud} baud")
             self.mavlink_connection = mavutil.mavlink_connection(
-                connection_string,
+                self.mavlink_port,
+                baud=self.mavlink_baud,
                 source_system=1,
                 source_component=1,
                 autoreconnect=True,
                 retries=3
             )
-            
             # Wait for heartbeat with timeout
             logger.info("Waiting for flight controller heartbeat...")
             try:
@@ -93,7 +91,6 @@ class MR72Radar:
             except Exception as e:
                 logger.error(f"Timeout waiting for heartbeat: {e}")
                 return False
-                
         except Exception as e:
             logger.error(f"Failed to connect to flight controller: {e}")
             return False
