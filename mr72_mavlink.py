@@ -72,17 +72,28 @@ class MR72Radar:
     def connect_mavlink(self):
         """Connect to flight controller via MAVLink"""
         try:
-            # Connect to flight controller
+            # Connect to flight controller using proper serial connection string
+            connection_string = f"serial:{self.mavlink_port}:{self.mavlink_baud}"
+            logger.info(f"Attempting to connect to MAVLink on: {connection_string}")
+            
             self.mavlink_connection = mavutil.mavlink_connection(
-                f"serial:{self.mavlink_port}:{self.mavlink_baud}",
+                connection_string,
                 source_system=1,
-                source_component=1
+                source_component=1,
+                autoreconnect=True,
+                retries=3
             )
             
-            # Wait for heartbeat
-            self.mavlink_connection.wait_heartbeat()
-            logger.info(f"Connected to flight controller on {self.mavlink_port}")
-            return True
+            # Wait for heartbeat with timeout
+            logger.info("Waiting for flight controller heartbeat...")
+            try:
+                self.mavlink_connection.wait_heartbeat(timeout=10)
+                logger.info(f"Connected to flight controller on {self.mavlink_port}")
+                return True
+            except Exception as e:
+                logger.error(f"Timeout waiting for heartbeat: {e}")
+                return False
+                
         except Exception as e:
             logger.error(f"Failed to connect to flight controller: {e}")
             return False
@@ -337,7 +348,7 @@ def main():
     parser = argparse.ArgumentParser(description="MR72 Radar to MAVLink Bridge")
     parser.add_argument("--uart-port", default="/dev/ttyS0", help="UART port for MR72 radar")
     parser.add_argument("--uart-baud", type=int, default=115200, help="UART baud rate")
-    parser.add_argument("--mavlink-port", default="/dev/ttyACM1", help="MAVLink port for flight controller")
+    parser.add_argument("--mavlink-port", default="/dev/ttyACM0", help="MAVLink port for flight controller")
     parser.add_argument("--mavlink-baud", type=int, default=115200, help="MAVLink baud rate")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     
