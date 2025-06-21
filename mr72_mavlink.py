@@ -20,38 +20,48 @@ SECTOR_ORIENTATION = {
     3: 7   # front-right
 }
 
-SEND_INTERVAL = 0.1  # 20 Hz send rate
+SEND_INTERVAL = 0.1  # 10 Hz send rate
 
 def parse_packet(pkt):
+    print(f"[DEBUG] Raw packet ({len(pkt)} bytes): {pkt.hex()}")
     d2 = int.from_bytes(pkt[2:4], 'big')
     d3 = int.from_bytes(pkt[4:6], 'big')
     d8 = int.from_bytes(pkt[16:18], 'big')
+
     def mm_to_cm(v):
-        return v // 10 if v != 0xFFFF else FAKE_DISTANCE
-    distances = {
-        sid: (
-            mm_to_cm(d8) if sid == 1 else
-            mm_to_cm(d2) if sid == 2 else
-            mm_to_cm(d3) if sid == 3 else
-            FAKE_DISTANCE
-        ) for sid in range(1, 9)
-    }
+        if v == 0xFFFF:
+            return FAKE_DISTANCE
+        return v // 10
+
+    distances = {}
+    for sid in range(1, 9):
+        if sid == 1:
+            distances[sid] = mm_to_cm(d8)
+        elif sid == 2:
+            distances[sid] = mm_to_cm(d2)
+        elif sid == 3:
+            distances[sid] = mm_to_cm(d3)
+        else:
+            distances[sid] = FAKE_DISTANCE
+
+    print("[DEBUG] Converted distances (cm): " + ", ".join(f"S{sid}={distances[sid]}" for sid in range(1,9)))
     return distances
 
 def send_heartbeat(mav):
+    print("[DEBUG] Sending heartbeat")
     mav.mav.heartbeat_send(type=6, autopilot=8, base_mode=0,
                             custom_mode=0, system_status=4)
 
 def send_distances(mav, dist):
+    t = time.time()
+    print(f"[DEBUG] Sending distances @ {t:.3f}")
     for sid, d in dist.items():
+        orient = SECTOR_ORIENTATION[sid]
+        print(f"  - Sector {sid} -> {d} cm @ orient {orient}")
         mav.mav.distance_sensor_send(
-            time_boot_ms=0,
-            min_distance=MIN_DISTANCE,
-            max_distance=MAX_DISTANCE,
-            current_distance=d,
-            type=0, id=0,
-            orientation=SECTOR_ORIENTATION[sid],
-            covariance=0
+            time_boot_ms=0, min_distance=MIN_DISTANCE, max_distance=MAX_DISTANCE,
+            current_distance=d, type=0, id=0,
+            orientation=orient, covariance=0
         )
 
 def main():
@@ -60,25 +70,33 @@ def main():
     mav = mavutil.mavlink_connection(
         FC_PORT, baud=FC_BAUD, source_system=1, source_component=158)
     mav.wait_heartbeat()
+    print("[DEBUG] Heartbeat received; ready to run.")
 
     last_hb = time.time()
     next_send = time.time()
 
     buf = bytearray()
     while True:
-        if time.time() - last_hb > 1.0:
+        if time.time() - last_hb >= 1.0:
             send_heartbeat(mav)
             last_hb = time.time()
 
-        buf += rs.read(rs.in_waiting or 1)
-        if len(buf) < 19:
-            continue
+        # Read any available bytes
+        incoming = rs.read(rs.in_waiting or 1)
+        buf += incoming
+        if incoming:
+            print(f"[DEBUG] Read {len(incoming)} bytes, buffer size: {len(buf)}")
+
+        # Attempt to find a full packet
         offset = buf.find(b'TH')
-        if offset < 0:
-            buf.clear()
+        if offset == -1:
+            if len(buf) > 100:
+                print("[DEBUG] Clearing buffer (no TH found in 100+ bytes)")
+                buf.clear()
             continue
         if len(buf) - offset < 19:
             continue
+
         pkt = buf[offset:offset+19]
         buf = buf[offset+19:]
         distances = parse_packet(pkt)
