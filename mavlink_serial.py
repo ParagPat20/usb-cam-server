@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import time
+import platform
 from pymavlink import mavutil
 
 def find_mavlink_ports(baud=115200, timeout=1.0):
@@ -9,7 +10,12 @@ def find_mavlink_ports(baud=115200, timeout=1.0):
     '''
     heartbeat_ports = []
     other_ports = []
-    ports = mavutil.auto_detect_serial_unix()  # Unix-compatible port list
+    
+    # Detect OS and use appropriate port detection method
+    if platform.system() == 'Windows':
+        ports = mavutil.auto_detect_serial_windows()
+    else:
+        ports = mavutil.auto_detect_serial_unix()
 
     print(f"Scanning ports: {[p.device for p in ports]}")
     for p in ports:
