@@ -18,7 +18,7 @@ def parse_sector(frame, msb_index, lsb_index):
     return val if val != 0xFFFF else 10000  # Return 10m if invalid
 
 # Connect to flight controller
-mav = mavutil.mavlink_connection('/dev/ttyACM0', baud=115200)
+mav = mavutil.mavlink_connection('/dev/ttyACM3', baud=115200)
 print("Waiting for MAVLink heartbeat...")
 mav.wait_heartbeat()
 print("MAVLink connected!")
