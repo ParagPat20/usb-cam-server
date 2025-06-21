@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class MR72Radar:
     def __init__(self, uart_port="/dev/ttyS0", uart_baud=115200, 
-                 mavlink_port="/dev/ttyACM1", mavlink_baud=115200):
+                 mavlink_port="/dev/ttyACM0", mavlink_baud=115200):
         self.uart_port = uart_port
         self.uart_baud = uart_baud
         self.mavlink_port = mavlink_port
