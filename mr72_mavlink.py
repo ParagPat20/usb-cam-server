@@ -10,10 +10,10 @@ MIN_DISTANCE = 30
 MAX_DISTANCE = 3000
 
 SECTOR_ORIENTATION = {2:0,1:1,8:2,7:3,6:4,5:5,4:6,3:7}
-SEND_INTERVAL = 0.05  # 5 Hz
+SEND_INTERVAL = 0.02  # 5 Hz
 
 # Setup EMA smoothing (alpha close to 1: smoother)
-EMA_ALPHA = 0.3
+EMA_ALPHA = 0.6
 ema = {sid: FAKE_DISTANCE for sid in range(1,9)}
 
 def parse_packet(pkt):
@@ -32,8 +32,8 @@ def parse_packet(pkt):
     return raw
 
 # Smoothers
-EMA_ALPHA = 0.8      # faster response
-WINDOW = 5           # 1-second window at 5 Hz
+EMA_ALPHA = 0.6      # faster response
+WINDOW = 10           # 1-second window at 5 Hz
 sma_buffers = {sid: [] for sid in range(1,9)}
 
 def smooth(raw):
