@@ -60,7 +60,7 @@ def send_heartbeat(master):
 def send_distances(master, distances):
     for sid, d in distances.items():
         orient = SECTOR_ORIENTATION[sid]
-        print(f"  → Sending {d} cm at orientation {orient}")
+        print(f"  → Sending {d/100} m at orientation {orient}")
         master.mav.distance_sensor_send(
             time_boot_ms=0,
             min_distance=MIN_DISTANCE,
