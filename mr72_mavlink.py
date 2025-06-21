@@ -44,7 +44,8 @@ def send_distances(master, distances):
 
 def main():
     rs = serial.Serial(MR72_PORT, MR72_BAUD, timeout=1)
-    mav = mavutil.mavlink_connection(FC_PORT, baud=FC_BAUD)
+    mav = mavutil.mavlink_connection(FC_PORT, baud=FC_BAUD, source_system=1, source_component=158)
+
     mav.wait_heartbeat()
     print("MAVLink heartbeat received; starting radar parsing.")
 
