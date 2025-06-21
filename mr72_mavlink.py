@@ -98,14 +98,15 @@ def main():
 
             sector_data = parse_mr72_packet(packet)
             if sector_data:
-                timestamp_us = int(time.time() * 1_000_000)
+                timestamp_ms = int((time.time() - mav.start_time) * 1000) % 4294967295
                 for sector_id, orientation in SECTOR_ANGLES.items():
                     send_distance_sensor(
                         master=mav,
-                        current_time_us=timestamp_us,
+                        current_time_us=timestamp_ms,
                         distance_cm=sector_data[sector_id],
                         orientation_deg=orientation
                     )
+
 
 
 if __name__ == '__main__':
