@@ -126,74 +126,80 @@ class MR72Radar:
             # Common parameters
             min_distance = 0  # Minimum distance the sensor can measure in cm
             max_distance = 1000  # Maximum distance the sensor can measure in cm
+            max_distance_cm = 10000  # Maximum distance placeholder (100m)
             
             # Send each sector as a separate DISTANCE_SENSOR message
-            if sector1 is not None:
-                self.mavlink_connection.mav.distance_sensor_send(
-                    time_boot_ms,  # ms since system boot
-                    min_distance,  # Minimum distance in cm
-                    max_distance,  # Maximum distance in cm
-                    safe_convert(sector1),  # Current distance reading
-                    0,  # Sensor type (0 = MAV_DISTANCE_SENSOR_LASER)
-                    1,  # Sensor ID (1 for sector 1)
-                    0,  # Orientation (0 = MAV_SENSOR_ROTATION_NONE for forward)
-                    255  # Covariance in cm (255 if unknown)
-                )
+            # Sector 1 (0 degrees)
+            self.mavlink_connection.mav.distance_sensor_send(
+                time_boot_ms,  # ms since system boot
+                min_distance,  # Minimum distance in cm
+                max_distance,  # Maximum distance in cm
+                safe_convert(sector1) if sector1 is not None else max_distance_cm,  # Current distance reading
+                0,  # Sensor type (0 = MAV_DISTANCE_SENSOR_LASER)
+                1,  # Sensor ID (1 for sector 1)
+                0,  # Orientation (0 = MAV_SENSOR_ROTATION_NONE for forward)
+                255  # Covariance in cm (255 if unknown)
+            )
             
-            if sector2 is not None:
-                self.mavlink_connection.mav.distance_sensor_send(
-                    time_boot_ms,
-                    min_distance,
-                    max_distance,
-                    safe_convert(sector2),
-                    0,  # Sensor type (0 = MAV_DISTANCE_SENSOR_LASER)
-                    2,  # Sensor ID (2 for sector 2)
-                    0,  # Orientation (0 = MAV_SENSOR_ROTATION_NONE for forward)
-                    255  # Covariance in cm (255 if unknown)
-                )
+            # Sector 2 (90 degrees)
+            self.mavlink_connection.mav.distance_sensor_send(
+                time_boot_ms,
+                min_distance,
+                max_distance,
+                safe_convert(sector2) if sector2 is not None else max_distance_cm,
+                0,  # Sensor type (0 = MAV_DISTANCE_SENSOR_LASER)
+                2,  # Sensor ID (2 for sector 2)
+                0,  # Orientation (0 = MAV_SENSOR_ROTATION_NONE for forward)
+                255  # Covariance in cm (255 if unknown)
+            )
             
-            if sector3 is not None:
-                self.mavlink_connection.mav.distance_sensor_send(
-                    time_boot_ms,
-                    min_distance,
-                    max_distance,
-                    safe_convert(sector3),
-                    0,  # Sensor type (0 = MAV_DISTANCE_SENSOR_LASER)
-                    3,  # Sensor ID (3 for sector 3)
-                    0,  # Orientation (0 = MAV_SENSOR_ROTATION_NONE for forward)
-                    255  # Covariance in cm (255 if unknown)
-                )
+            # Sector 3 (180 degrees)
+            self.mavlink_connection.mav.distance_sensor_send(
+                time_boot_ms,
+                min_distance,
+                max_distance,
+                safe_convert(sector3) if sector3 is not None else max_distance_cm,
+                0,  # Sensor type (0 = MAV_DISTANCE_SENSOR_LASER)
+                3,  # Sensor ID (3 for sector 3)
+                0,  # Orientation (0 = MAV_SENSOR_ROTATION_NONE for forward)
+                255  # Covariance in cm (255 if unknown)
+            )
             
-            # Send other sectors as placeholders (mostly None)
-            if sector_90 is not None:
-                self.mavlink_connection.mav.distance_sensor_send(
-                    time_boot_ms, min_distance, max_distance, safe_convert(sector_90),
-                    0, 4, 0, 255  # Sensor ID 4
-                )
+            # Other sectors as placeholders with maximum distance
+            # Sector 90 degrees
+            self.mavlink_connection.mav.distance_sensor_send(
+                time_boot_ms, min_distance, max_distance, 
+                safe_convert(sector_90) if sector_90 is not None else max_distance_cm,
+                0, 4, 0, 255  # Sensor ID 4
+            )
             
-            if sector_135 is not None:
-                self.mavlink_connection.mav.distance_sensor_send(
-                    time_boot_ms, min_distance, max_distance, safe_convert(sector_135),
-                    0, 5, 0, 255  # Sensor ID 5
-                )
+            # Sector 135 degrees
+            self.mavlink_connection.mav.distance_sensor_send(
+                time_boot_ms, min_distance, max_distance, 
+                safe_convert(sector_135) if sector_135 is not None else max_distance_cm,
+                0, 5, 0, 255  # Sensor ID 5
+            )
             
-            if sector_180 is not None:
-                self.mavlink_connection.mav.distance_sensor_send(
-                    time_boot_ms, min_distance, max_distance, safe_convert(sector_180),
-                    0, 6, 0, 255  # Sensor ID 6
-                )
+            # Sector 180 degrees
+            self.mavlink_connection.mav.distance_sensor_send(
+                time_boot_ms, min_distance, max_distance, 
+                safe_convert(sector_180) if sector_180 is not None else max_distance_cm,
+                0, 6, 0, 255  # Sensor ID 6
+            )
             
-            if sector_225 is not None:
-                self.mavlink_connection.mav.distance_sensor_send(
-                    time_boot_ms, min_distance, max_distance, safe_convert(sector_225),
-                    0, 7, 0, 255  # Sensor ID 7
-                )
+            # Sector 225 degrees
+            self.mavlink_connection.mav.distance_sensor_send(
+                time_boot_ms, min_distance, max_distance, 
+                safe_convert(sector_225) if sector_225 is not None else max_distance_cm,
+                0, 7, 0, 255  # Sensor ID 7
+            )
             
-            if sector_270 is not None:
-                self.mavlink_connection.mav.distance_sensor_send(
-                    time_boot_ms, min_distance, max_distance, safe_convert(sector_270),
-                    0, 8, 0, 255  # Sensor ID 8
-                )
+            # Sector 270 degrees
+            self.mavlink_connection.mav.distance_sensor_send(
+                time_boot_ms, min_distance, max_distance, 
+                safe_convert(sector_270) if sector_270 is not None else max_distance_cm,
+                0, 8, 0, 255  # Sensor ID 8
+            )
             
         except Exception as e:
             logger.error(f"Error sending distance sensor data: {e}")
