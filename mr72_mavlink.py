@@ -5,7 +5,7 @@ import numpy as np
 
 # Serial & MAVLink settings...
 MR72_PORT, MR72_BAUD = '/dev/ttyS0', 115200
-FC_PORT, FC_BAUD = '/dev/ttyACM3', 115200
+FC_PORT, FC_BAUD = '/dev/serial/by-id/usb-ArduPilot_Pixhawk6X_36004E001351333031333637-if00', 115200
 FAKE_DISTANCE = 1000
 MIN_DISTANCE, MAX_DISTANCE = 30, 3000
 SECTOR_ORIENTATION = {2:0,1:1,8:2,7:3,6:4,5:5,4:6,3:7}
