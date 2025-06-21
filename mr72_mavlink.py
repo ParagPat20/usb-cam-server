@@ -80,6 +80,8 @@ def main():
         if sd:
             send_distances(mav, sd)
             print("All sensor messages sent.\n")
+            time.sleep(0.1)  # pace to ~10 Hz
+
 
 if __name__ == '__main__':
     main()
