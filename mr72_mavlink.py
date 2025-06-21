@@ -7,7 +7,7 @@ MR72_PORT, MR72_BAUD = '/dev/ttyS0', 115200
 FC_PORT, FC_BAUD = '/dev/ttyACM3', 115200
 
 # Distance sensor constants
-FAKE_DISTANCE, MIN_DISTANCE, MAX_DISTANCE = 3000, 30, 3000
+FAKE_DISTANCE, MIN_DISTANCE, MAX_DISTANCE = 1000, 30, 3000
 SECTOR_ORIENTATION = {1:1, 2:0, 3:7, 4:6, 5:5, 6:4, 7:3, 8:2}
 
 def parse_packet(pkt: bytes):
@@ -80,7 +80,7 @@ def main():
         if sd:
             send_distances(mav, sd)
             print("All sensor messages sent.\n")
-            time.sleep(0.5)  # pace to ~10 Hz
+            time.sleep(0.1)  # pace to ~10 Hz
 
 
 if __name__ == '__main__':
