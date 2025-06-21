@@ -42,25 +42,6 @@ recording_thread = None
 current_recording = None
 recording_lock = threading.Lock()
 
-# Video settings
-video_width = 960
-video_height = 540
-video_fps = 30
-is_raspberry_pi = False
-
-# Auto-detect Raspberry Pi
-try:
-    with open('/proc/cpuinfo', 'r') as f:
-        if 'Raspberry Pi' in f.read():
-            is_raspberry_pi = True
-            # Use more conservative settings for Pi
-            video_width = 960
-            video_height = 540
-            video_fps = 25
-            logger.info("Raspberry Pi detected - using optimized settings")
-except:
-    pass
-
 class ConnectionDiagnostics:
     def __init__(self, pc_id):
         self.pc_id = pc_id
@@ -260,59 +241,28 @@ pcs = {}
 def initialize_camera():
     global cap
     try:
-        # Try V4L2 first (Linux/Raspberry Pi)
+        # Try V4L2 first (Linux)
         try:
+            
             cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
-            if cap.isOpened():
-                # Raspberry Pi specific optimizations
-                if is_raspberry_pi:
-                    # Set V4L2 specific properties for better quality on Pi
-                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
-                    cap.set(cv2.CAP_PROP_CONVERT_RGB, True)
-                    # Use hardware acceleration if available
-                    cap.set(cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY)
-                    logger.info("Applied Raspberry Pi camera optimizations")
-        except Exception as e:
-            logger.debug(f"V4L2 failed: {e}")
+        except:
             # Fallback to default backend
             cap = cv2.VideoCapture(0)
-        
         if cap.isOpened():
-            # Set resolution using global settings
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, video_width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, video_height)
-            # Set frame rate using global settings
-            cap.set(cv2.CAP_PROP_FPS, video_fps)
-            # Set buffer size - smaller for Pi to reduce latency
-            buffer_size = 1 if is_raspberry_pi else 3
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, buffer_size)
-            
-            # Additional Raspberry Pi optimizations
-            if is_raspberry_pi:
-                # Set exposure and gain for better quality
-                cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # Manual exposure
-                cap.set(cv2.CAP_PROP_EXPOSURE, -6)  # Lower exposure for less noise
-                cap.set(cv2.CAP_PROP_GAIN, 0)  # Lower gain for less noise
-                # Set brightness and contrast
-                cap.set(cv2.CAP_PROP_BRIGHTNESS, 50)
-                cap.set(cv2.CAP_PROP_CONTRAST, 50)
-                # Disable auto focus if available
-                cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
-            
-            # Verify the settings were applied
-            actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-            actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            actual_fps = cap.get(cv2.CAP_PROP_FPS)
-            
-            logger.info(f"Camera initialized: {actual_width}x{actual_height} @ {actual_fps}fps")
-            logger.info(f"Target settings: {video_width}x{video_height} @ {video_fps}fps")
-            
+            # Set resolution
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
+            # Set frame rate
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            # Set buffer size
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            print("Successfully opened camera at index 0")
             return True
     except Exception as e:
-        logger.error(f"Error opening camera: {str(e)}")
+        print(f"Error opening camera: {str(e)}")
         if cap is not None:
             cap.release()
-    logger.error("Failed to open camera at index 0")
+    print("Failed to open camera at index 0")
     return False
 
 def frame_grabber():
@@ -621,101 +571,6 @@ async def recording_status(request):
                 status=500
             )
 
-async def video_settings(request):
-    """Endpoint to handle video quality settings changes"""
-    global cap, video_width, video_height, video_fps, is_raspberry_pi
-    
-    if request.method == "POST":
-        try:
-            data = await request.json()
-            
-            # Parse resolution
-            resolution = data.get("resolution", "960x540")
-            width, height = map(int, resolution.split('x'))
-            
-            # Get other settings
-            fps = data.get("fps", 25)
-            platform = data.get("platform", "auto")
-            quality = data.get("quality", "medium")
-            
-            # Update global settings
-            video_width = width
-            video_height = height
-            video_fps = fps
-            
-            # Update platform detection
-            if platform == "raspberry-pi":
-                is_raspberry_pi = True
-            elif platform == "desktop":
-                is_raspberry_pi = False
-            # If auto, keep current detection
-            
-            logger.info(f"Updating video settings: {width}x{height} @ {fps}fps, Platform: {platform}")
-            
-            # Reconfigure camera with new settings
-            if cap is not None and cap.isOpened():
-                # Set new resolution and frame rate
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-                cap.set(cv2.CAP_PROP_FPS, fps)
-                
-                # Apply Raspberry Pi optimizations if needed
-                if is_raspberry_pi:
-                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
-                    cap.set(cv2.CAP_PROP_CONVERT_RGB, True)
-                    cap.set(cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_ANY)
-                    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
-                    cap.set(cv2.CAP_PROP_EXPOSURE, -6)
-                    cap.set(cv2.CAP_PROP_GAIN, 0)
-                    cap.set(cv2.CAP_PROP_BRIGHTNESS, 50)
-                    cap.set(cv2.CAP_PROP_CONTRAST, 50)
-                    cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
-                
-                # Verify settings were applied
-                actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-                actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-                actual_fps = cap.get(cv2.CAP_PROP_FPS)
-                
-                logger.info(f"Camera reconfigured: {actual_width}x{actual_height} @ {actual_fps}fps")
-                
-                return web.Response(
-                    content_type="application/json",
-                    text=json.dumps({
-                        "message": f"Settings updated to {width}x{height} @ {fps}fps",
-                        "actual_settings": {
-                            "width": actual_width,
-                            "height": actual_height,
-                            "fps": actual_fps
-                        }
-                    }, ensure_ascii=False)
-                )
-            else:
-                return web.Response(
-                    content_type="application/json",
-                    text=json.dumps({"error": "Camera not available"}, ensure_ascii=False),
-                    status=500
-                )
-                
-        except Exception as e:
-            logger.error(f"Error updating video settings: {e}")
-            return web.Response(
-                content_type="application/json",
-                text=json.dumps({"error": str(e)}, ensure_ascii=False),
-                status=500
-            )
-    
-    elif request.method == "GET":
-        # Return current settings
-        return web.Response(
-            content_type="application/json",
-            text=json.dumps({
-                "width": video_width,
-                "height": video_height,
-                "fps": video_fps,
-                "is_raspberry_pi": is_raspberry_pi
-            }, ensure_ascii=False)
-        )
-
 async def on_shutdown(app):
     global frame_grabber_running, recording_running, current_recording
     # close peer connections
@@ -784,8 +639,6 @@ if __name__ == "__main__":
     app.router.add_get("/diagnostics", get_diagnostics)
     app.router.add_get("/recording_status", recording_status)
     app.router.add_post("/recording_status", recording_status)
-    app.router.add_post("/video_settings", video_settings)
-    app.router.add_get("/video_settings", video_settings)
     
     # Configure CORS for all routes
     for route in list(app.router.routes()):
