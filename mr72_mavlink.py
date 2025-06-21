@@ -5,93 +5,73 @@ from pymavlink import mavutil
 MR72_PORT, MR72_BAUD = '/dev/ttyS0', 115200
 FC_PORT, FC_BAUD = '/dev/ttyACM3', 115200
 
-FAKE_DISTANCE = 1000  # cm
+FAKE_DISTANCE = 1000  # cm for unmeasured sectors
 MIN_DISTANCE = 30
 MAX_DISTANCE = 3000
 
-SECTOR_ORIENTATION = {
-    2: 0,  # front-center
-    1: 1,  # front-left
-    8: 2,  # left
-    7: 3,  # back-left
-    6: 4,  # back-center
-    5: 5,  # back-right
-    4: 6,  # right
-    3: 7   # front-right
-}
+SECTOR_ORIENTATION = {2:0,1:1,8:2,7:3,6:4,5:5,4:6,3:7}
+SEND_INTERVAL = 0.2  # 5 Hz
 
-SEND_INTERVAL = 0.1  # 10 Hz send rate
+# Setup EMA smoothing (alpha close to 1: smoother)
+EMA_ALPHA = 0.3
+ema = {sid: FAKE_DISTANCE for sid in range(1,9)}
 
 def parse_packet(pkt):
-    print(f"[DEBUG] Raw packet ({len(pkt)} bytes): {pkt.hex()}")
     d2 = int.from_bytes(pkt[2:4], 'big')
     d3 = int.from_bytes(pkt[4:6], 'big')
     d8 = int.from_bytes(pkt[16:18], 'big')
-
     def mm_to_cm(v):
-        if v == 0xFFFF:
-            return FAKE_DISTANCE
-        return v // 10
+        return v//10 if v != 0xFFFF else FAKE_DISTANCE
+    raw = {sid: (
+        mm_to_cm(d8) if sid == 1 else
+        mm_to_cm(d2) if sid == 2 else
+        mm_to_cm(d3) if sid == 3 else
+        FAKE_DISTANCE
+    ) for sid in range(1,9)}
+    print("[RAW]    " + ", ".join(f"S{sid}={raw[sid]}" for sid in range(1,9)))
+    return raw
 
-    distances = {}
-    for sid in range(1, 9):
-        if sid == 1:
-            distances[sid] = mm_to_cm(d8)
-        elif sid == 2:
-            distances[sid] = mm_to_cm(d2)
-        elif sid == 3:
-            distances[sid] = mm_to_cm(d3)
-        else:
-            distances[sid] = FAKE_DISTANCE
-
-    print("[DEBUG] Converted distances (cm): " + ", ".join(f"S{sid}={distances[sid]}" for sid in range(1,9)))
-    return distances
-
-def send_heartbeat(mav):
-    print("[DEBUG] Sending heartbeat")
-    mav.mav.heartbeat_send(type=6, autopilot=8, base_mode=0,
-                            custom_mode=0, system_status=4)
+def smooth(raw):
+    for sid, val in raw.items():
+        ema[sid] = int(ema[sid] + EMA_ALPHA * (val - ema[sid]))
+    print("[FILTER]" + ", ".join(f"S{sid}={ema[sid]}" for sid in range(1,9)))
+    return ema.copy()
 
 def send_distances(mav, dist):
-    t = time.time()
-    print(f"[DEBUG] Sending distances @ {t:.3f}")
+    ts = time.time()
+    print(f"[SEND @ {ts:.3f}]")
     for sid, d in dist.items():
-        orient = SECTOR_ORIENTATION[sid]
-        print(f"  - Sector {sid} -> {d} cm @ orient {orient}")
+        print(f"  • Sector {sid}: {d} cm → orient {SECTOR_ORIENTATION[sid]}")
         mav.mav.distance_sensor_send(
-            time_boot_ms=0, min_distance=MIN_DISTANCE, max_distance=MAX_DISTANCE,
-            current_distance=d, type=0, id=0,
-            orientation=orient, covariance=0
+            time_boot_ms=0, min_distance=MIN_DISTANCE,
+            max_distance=MAX_DISTANCE, current_distance=d,
+            type=0, id=0, orientation=SECTOR_ORIENTATION[sid],
+            covariance=0
         )
 
 def main():
     rs = serial.Serial(MR72_PORT, MR72_BAUD, timeout=1)
     rs.reset_input_buffer()
     mav = mavutil.mavlink_connection(
-        FC_PORT, baud=FC_BAUD, source_system=1, source_component=158)
+        FC_PORT, baud=FC_BAUD, source_system=1, source_component=158
+    )
     mav.wait_heartbeat()
-    print("[DEBUG] Heartbeat received; ready to run.")
+    print("[DEBUG] Heartbeat OK. Starting loop…")
 
     last_hb = time.time()
     next_send = time.time()
-
     buf = bytearray()
+
     while True:
         if time.time() - last_hb >= 1.0:
-            send_heartbeat(mav)
+            mav.mav.heartbeat_send(type=6, autopilot=8, base_mode=0,
+                                   custom_mode=0, system_status=4)
             last_hb = time.time()
 
-        # Read any available bytes
-        incoming = rs.read(rs.in_waiting or 1)
-        buf += incoming
-        if incoming:
-            print(f"[DEBUG] Read {len(incoming)} bytes, buffer size: {len(buf)}")
-
-        # Attempt to find a full packet
+        buf += rs.read(rs.in_waiting or 1)
         offset = buf.find(b'TH')
-        if offset == -1:
-            if len(buf) > 100:
-                print("[DEBUG] Clearing buffer (no TH found in 100+ bytes)")
+        if offset < 0:
+            if len(buf) > 200:
                 buf.clear()
             continue
         if len(buf) - offset < 19:
@@ -99,14 +79,14 @@ def main():
 
         pkt = buf[offset:offset+19]
         buf = buf[offset+19:]
-        distances = parse_packet(pkt)
+        raw = parse_packet(pkt)
+        filtered = smooth(raw)
 
-        now = time.time()
-        if now >= next_send:
-            send_distances(mav, distances)
+        if time.time() >= next_send:
+            send_distances(mav, filtered)
             next_send += SEND_INTERVAL
-            if now > next_send:
-                next_send = now
+            if time.time() > next_send:
+                next_send = time.time()
 
 if __name__ == '__main__':
     main()
