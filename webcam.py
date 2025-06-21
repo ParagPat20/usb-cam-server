@@ -262,7 +262,7 @@ def initialize_camera():
     try:
         # Try V4L2 first (Linux/Raspberry Pi)
         try:
-            cap = cv2.VideoCapture(0)
+            cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
             if cap.isOpened():
                 # Raspberry Pi specific optimizations
                 if is_raspberry_pi:
