@@ -7,7 +7,7 @@ MR72_PORT = '/dev/ttyS0'  # Radar UART
 MR72_BAUD = 115200
 
 # Flight Controller config
-FC_PORT = '/dev/ttyACM1'  # SLCAN port or MAVLink UART
+FC_PORT = '/dev/ttyACM3'  # SLCAN port or MAVLink UART
 FC_BAUD = 115200
 
 # Fake obstacle distance for sectors that MR72 does not support (in cm)
