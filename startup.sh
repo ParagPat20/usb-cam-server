@@ -32,6 +32,17 @@ create_tunnel_session() {
     fi
 }
 
+# Function to create MR72 MAVLink tmux session
+create_mr72_session() {
+    if ! tmux has-session -t mr72 2>/dev/null; then
+        tmux new-session -d -s mr72
+        tmux send-keys -t mr72 "cd $SCRIPT_DIR && source $SCRIPT_DIR/venv/bin/activate && python mr72_mavlink.py" C-m
+        echo "MR72 MAVLink tmux session created"
+    else
+        echo "MR72 MAVLink tmux session already exists"
+    fi
+}
+
 # Wait for network
 echo "Waiting for network..."
 while ! ping -c 1 -W 1 8.8.8.8; do
@@ -39,12 +50,15 @@ while ! ping -c 1 -W 1 8.8.8.8; do
 done
 echo "Network is up"
 
-# Create both sessions
+# Create all sessions
 create_webcam_session
 sleep 5  # Wait for webcam to initialize
 create_tunnel_session
+sleep 2  # Wait for tunnel to initialize
+create_mr72_session
 
-echo "Both tmux sessions have been created"
+echo "All tmux sessions have been created"
 echo "To view webcam session: tmux attach -t webcam"
 echo "To view tunnel session: tmux attach -t tunnel"
+echo "To view MR72 MAVLink session: tmux attach -t mr72"
 echo "To detach from a session: Press Ctrl+B then D" 

@@ -69,10 +69,41 @@ view_tunnel_tmux() {
     fi
 }
 
+# Function to start MR72 MAVLink in tmux
+start_mr72_tmux() {
+    if ! tmux has-session -t mr72 2>/dev/null; then
+        tmux new-session -d -s mr72
+        tmux send-keys -t mr72 "cd $(pwd) && source venv/bin/activate && python mr72_mavlink.py" C-m
+        echo "MR72 MAVLink started in tmux session 'mr72'"
+    else
+        echo "MR72 MAVLink tmux session already exists"
+    fi
+}
+
+# Function to stop MR72 MAVLink tmux
+stop_mr72_tmux() {
+    if tmux has-session -t mr72 2>/dev/null; then
+        tmux kill-session -t mr72
+        echo "MR72 MAVLink tmux session stopped"
+    else
+        echo "No MR72 MAVLink tmux session found"
+    fi
+}
+
+# Function to view MR72 MAVLink logs
+view_mr72_tmux() {
+    if tmux has-session -t mr72 2>/dev/null; then
+        tmux attach-session -t mr72
+    else
+        echo "No MR72 MAVLink tmux session found"
+    fi
+}
+
 # Function to start all in tmux
 start_all_tmux() {
     start_webcam_tmux
     start_tunnel_tmux
+    start_mr72_tmux
     echo "All services started in tmux"
 }
 
@@ -80,6 +111,7 @@ start_all_tmux() {
 stop_all_tmux() {
     stop_webcam_tmux
     stop_tunnel_tmux
+    stop_mr72_tmux
     echo "All tmux sessions stopped"
 }
 
@@ -117,6 +149,15 @@ case "$1" in
     "view-tunnel")
         view_tunnel_tmux
         ;;
+    "start-mr72")
+        start_mr72_tmux
+        ;;
+    "stop-mr72")
+        stop_mr72_tmux
+        ;;
+    "view-mr72")
+        view_mr72_tmux
+        ;;
     "start-all")
         start_all_tmux
         ;;
@@ -133,7 +174,7 @@ case "$1" in
         check_venv
         ;;
     *)
-        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|start-all|stop-all|list|install-startup|setup}"
+        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup}"
         exit 1
         ;;
 esac 
