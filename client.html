@@ -96,6 +96,89 @@
             background: #444;
         }
 
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-size: 0.9em;
+            color: #ccc;
+            font-weight: 500;
+        }
+
+        .control-group select,
+        .control-group input {
+            padding: 8px 12px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 0.9em;
+        }
+
+        .control-group select:focus,
+        .control-group input:focus {
+            outline: none;
+            border-color: #00ff9d;
+        }
+
+        .quality-preset {
+            padding: 10px 15px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .quality-preset:hover {
+            background: #3a3a3a;
+            border-color: #00ff9d;
+        }
+
+        .quality-preset.active {
+            background: #00ff9d;
+            color: #000;
+            border-color: #00ff9d;
+        }
+
+        .apply-btn {
+            padding: 10px 20px;
+            background: #00ff9d;
+            color: #000;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+
+        .apply-btn:hover {
+            background: #00cc7d;
+            transform: translateY(-1px);
+        }
+
+        .apply-btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 10px;
@@ -117,6 +200,52 @@
         <div class="video-container">
             <video id="video" autoplay playsinline controls></video>
         </div>
+        
+        <!-- Video Quality Controls -->
+        <div class="controls">
+            <div class="control-group">
+                <label>Quality Preset:</label>
+                <div style="display: flex; gap: 5px;">
+                    <button class="quality-preset active" data-quality="low">Low</button>
+                    <button class="quality-preset" data-quality="medium">Medium</button>
+                    <button class="quality-preset" data-quality="high">High</button>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <label>Resolution:</label>
+                <select id="resolution">
+                    <option value="640x480">640x480 (Low)</option>
+                    <option value="960x540" selected>960x540 (Medium)</option>
+                    <option value="1280x720">1280x720 (High)</option>
+                    <option value="1920x1080">1920x1080 (Full HD)</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Frame Rate:</label>
+                <select id="fps">
+                    <option value="15">15 fps</option>
+                    <option value="25" selected>25 fps</option>
+                    <option value="30">30 fps</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Platform:</label>
+                <select id="platform">
+                    <option value="auto">Auto-detect</option>
+                    <option value="raspberry-pi">Raspberry Pi</option>
+                    <option value="desktop">Desktop</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>&nbsp;</label>
+                <button id="applySettings" class="apply-btn">Apply Settings</button>
+            </div>
+        </div>
+        
         <div id="status">Connecting...</div>
         <div id="debug"></div>
     </div>
@@ -126,12 +255,92 @@
         const debug = document.getElementById('debug');
         let pc;
 
+        // Quality control elements
+        const qualityPresets = document.querySelectorAll('.quality-preset');
+        const resolutionSelect = document.getElementById('resolution');
+        const fpsSelect = document.getElementById('fps');
+        const platformSelect = document.getElementById('platform');
+        const applyBtn = document.getElementById('applySettings');
+
+        // Quality preset configurations
+        const qualityConfigs = {
+            low: { resolution: '640x480', fps: '15' },
+            medium: { resolution: '960x540', fps: '25' },
+            high: { resolution: '1280x720', fps: '30' }
+        };
+
         function log(message) {
             const time = new Date().toLocaleTimeString();
             debug.innerHTML += `[${time}] ${message}<br>`;
             debug.scrollTop = debug.scrollHeight;
             console.log(message);
         }
+
+        // Quality preset button handlers
+        qualityPresets.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Remove active class from all buttons
+                qualityPresets.forEach(b => b.classList.remove('active'));
+                // Add active class to clicked button
+                btn.classList.add('active');
+                
+                // Apply preset settings
+                const quality = btn.dataset.quality;
+                const config = qualityConfigs[quality];
+                resolutionSelect.value = config.resolution;
+                fpsSelect.value = config.fps;
+                
+                log(`Quality preset changed to: ${quality}`);
+            });
+        });
+
+        // Apply settings button handler
+        applyBtn.addEventListener('click', async () => {
+            try {
+                applyBtn.disabled = true;
+                applyBtn.textContent = 'Applying...';
+                
+                const settings = {
+                    resolution: resolutionSelect.value,
+                    fps: parseInt(fpsSelect.value),
+                    platform: platformSelect.value,
+                    quality: document.querySelector('.quality-preset.active').dataset.quality
+                };
+                
+                log(`Applying settings: ${JSON.stringify(settings)}`);
+                
+                // Send settings to server
+                const response = await fetch('/video_settings', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(settings)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                log(`Settings applied: ${result.message}`);
+                status.textContent = `Settings updated: ${settings.resolution} @ ${settings.fps}fps`;
+                
+                // Restart connection with new settings
+                if (pc) {
+                    log('Restarting connection with new settings...');
+                    pc.close();
+                    await start();
+                }
+                
+            } catch (e) {
+                log(`Error applying settings: ${e.message}`);
+                status.textContent = 'Error applying settings: ' + e.message;
+            } finally {
+                applyBtn.disabled = false;
+                applyBtn.textContent = 'Apply Settings';
+            }
+        });
 
         async function start() {
             try {
