@@ -10,7 +10,7 @@ MIN_DISTANCE = 30
 MAX_DISTANCE = 3000
 
 SECTOR_ORIENTATION = {2:0,1:1,8:2,7:3,6:4,5:5,4:6,3:7}
-SEND_INTERVAL = 0.2  # 5 Hz
+SEND_INTERVAL = 0.05  # 5 Hz
 
 # Setup EMA smoothing (alpha close to 1: smoother)
 EMA_ALPHA = 0.3
@@ -31,19 +31,23 @@ def parse_packet(pkt):
     print("[RAW]    " + ", ".join(f"S{sid}={raw[sid]}" for sid in range(1,9)))
     return raw
 
-EMA_ALPHA = 0.7  # more responsive
-ema = {sid: FAKE_DISTANCE for sid in range(1,9)}
-ema2 = ema.copy()
+# Smoothers
+EMA_ALPHA = 0.8      # faster response
+WINDOW = 5           # 1-second window at 5 Hz
+sma_buffers = {sid: [] for sid in range(1,9)}
 
 def smooth(raw):
-    for sid, val in raw.items():
-        ema[sid] = EMA_ALPHA * val + (1-EMA_ALPHA) * ema[sid]
-        ema2[sid] = EMA_ALPHA * ema[sid] + (1-EMA_ALPHA) * ema2[sid]
     filtered = {}
-    for sid in raw:
-        # Use either EMA or DEMA:
-        filtered[sid] = int(2*ema[sid] - ema2[sid])
-    print("[SMOOTHED]", filtered)
+    for sid, val in raw.items():
+        # EMA update
+        ema[sid] = EMA_ALPHA * val + (1 - EMA_ALPHA) * ema[sid]
+        # SMA update
+        buf = sma_buffers[sid]
+        buf.append(val)
+        if len(buf) > WINDOW:
+            buf.pop(0)
+        filtered[sid] = int(sum(buf) / len(buf))  # replace with ema[sid] to choose EMA
+    print(f"[SMOOTHED] SMA({WINDOW}): " + ", ".join(f"S{sid}={filtered[sid]}" for sid in filtered))
     return filtered
 
 def send_distances(mav, dist):
