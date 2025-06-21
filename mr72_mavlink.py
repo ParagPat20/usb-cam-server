@@ -204,53 +204,6 @@ class MR72Radar:
         except Exception as e:
             logger.error(f"Error sending distance sensor data: {e}")
     
-    def send_obstacle_distance_mavlink(self, distances):
-        """Send OBSTACLE_DISTANCE message for all sectors"""
-        if not self.mavlink_connection:
-            return
-        
-        try:
-            # Create distance array (72 elements for 5-degree increments)
-            # Initialize with maximum distance (10000cm = 100m)
-            distance_array = [10000] * 72
-            
-            # Map our sectors to the 72-element array
-            # Each sector covers approximately 56 degrees, but we'll map to closest 5-degree increments
-            
-            # Sector 1 (0 degrees) - map to indices around 0
-            if distances['sector1'] is not None:
-                for i in range(6):  # ±15 degrees around 0
-                    idx = (i + 72) % 72
-                    distance_array[idx] = distances['sector1'] // 10  # Convert to cm
-            
-            # Sector 2 (90 degrees) - map to indices around 18
-            if distances['sector2'] is not None:
-                for i in range(6):  # ±15 degrees around 90
-                    idx = (18 + i) % 72
-                    distance_array[idx] = distances['sector2'] // 10  # Convert to cm
-            
-            # Sector 3 (180 degrees) - map to indices around 36
-            if distances['sector3'] is not None:
-                for i in range(6):  # ±15 degrees around 180
-                    idx = (36 + i) % 72
-                    distance_array[idx] = distances['sector3'] // 10  # Convert to cm
-            
-            # Send OBSTACLE_DISTANCE message
-            self.mavlink_connection.mav.obstacle_distance_send(
-                time_usec=int(time.time() * 1000000),
-                sensor_type=0,  # MAV_DISTANCE_SENSOR_ULTRASOUND
-                distances=distance_array,
-                increment=5,  # 5-degree increments
-                min_distance=10,  # 10cm
-                max_distance=10000,  # 100m
-                increment_f=5.0,
-                angle_offset=0.0,
-                frame=12  # MAV_FRAME_BODY_FRD
-            )
-            
-        except Exception as e:
-            logger.error(f"Error sending obstacle distance data: {e}")
-    
     def uart_reader_thread(self):
         """Thread to continuously read UART data from MR72"""
         while self.running:
@@ -316,8 +269,8 @@ class MR72Radar:
                         data['sector_225'], data['sector_270']
                     )
                     
-                    # Send comprehensive obstacle distance message
-                    self.send_obstacle_distance_mavlink(data)
+                    # Note: OBSTACLE_DISTANCE message removed as it's not available in this pymavlink version
+                    # The DISTANCE_SENSOR messages provide sufficient obstacle detection data
                     
                 time.sleep(0.1)  # 10Hz update rate
                 
