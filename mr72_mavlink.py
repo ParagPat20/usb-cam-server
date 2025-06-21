@@ -9,7 +9,6 @@ import time
 import threading
 import logging
 from pymavlink import mavutil
-from pymavlink import mavlink
 
 # Configure logging
 logging.basicConfig(
@@ -155,7 +154,7 @@ class MR72Radar:
                 min_distance=10,  # 10cm minimum
                 max_distance=10000,  # 100m maximum
                 current_distance=int(distance_cm),
-                type=mavlink.MAV_DISTANCE_SENSOR_ULTRASOUND,
+                type=0,  # MAV_DISTANCE_SENSOR_ULTRASOUND
                 id=sensor_id,
                 orientation=orientation,
                 covariance=0
@@ -198,14 +197,14 @@ class MR72Radar:
             # Send OBSTACLE_DISTANCE message
             self.mavlink_connection.mav.obstacle_distance_send(
                 time_usec=int(time.time() * 1000000),
-                sensor_type=mavlink.MAV_DISTANCE_SENSOR_ULTRASOUND,
+                sensor_type=0,  # MAV_DISTANCE_SENSOR_ULTRASOUND
                 distances=distance_array,
                 increment=5,  # 5-degree increments
                 min_distance=10,  # 10cm
                 max_distance=10000,  # 100m
                 increment_f=5.0,
                 angle_offset=0.0,
-                frame=mavlink.MAV_FRAME_BODY_FRD
+                frame=12  # MAV_FRAME_BODY_FRD
             )
             
         except Exception as e:
@@ -262,7 +261,7 @@ class MR72Radar:
                     if data['sector1'] is not None:
                         self.send_distance_sensor_mavlink(
                             data['sector1'], 
-                            mavlink.MAV_SENSOR_ROTATION_NONE, 
+                            0,  # MAV_SENSOR_ROTATION_NONE
                             1
                         )
                     
@@ -270,7 +269,7 @@ class MR72Radar:
                     if data['sector2'] is not None:
                         self.send_distance_sensor_mavlink(
                             data['sector2'], 
-                            mavlink.MAV_SENSOR_ROTATION_90_DEG, 
+                            1,  # MAV_SENSOR_ROTATION_90_DEG
                             2
                         )
                     
@@ -278,7 +277,7 @@ class MR72Radar:
                     if data['sector3'] is not None:
                         self.send_distance_sensor_mavlink(
                             data['sector3'], 
-                            mavlink.MAV_SENSOR_ROTATION_180_DEG, 
+                            2,  # MAV_SENSOR_ROTATION_180_DEG
                             3
                         )
                     
