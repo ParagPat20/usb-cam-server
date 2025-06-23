@@ -304,7 +304,7 @@ class WebcamTrack(MediaStreamTrack):
 
     async def recv(self):
         global latest_frame
-        for _ in range(self._max_retries):
+        while True:
             with frame_lock:
                 frame = None if latest_frame is None else latest_frame.copy()
             if frame is not None:
@@ -314,15 +314,9 @@ class WebcamTrack(MediaStreamTrack):
                 new_frame = av.VideoFrame.from_ndarray(frame_rgba, format='rgba')
                 new_frame.pts = int(pts)
                 new_frame.time_base = Fraction(1, 1000000)
-
-                # Add sleep to control frame rate (e.g. 5 Hz = 0.2s)
                 await asyncio.sleep(0.05)  # 5 FPS cap
                 return new_frame
             await asyncio.sleep(0.01)
-        print("No frame available after retries")
-        return None
-
-
 
 async def index(request):
     content = open(os.path.join(ROOT, "client.html"), "r").read()
