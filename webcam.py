@@ -244,7 +244,7 @@ def initialize_camera():
         # Try V4L2 first (Linux)
         try:
             
-            cap = cv2.VideoCapture(0, cv2.CAP_GSTREAMER)
+            cap = cv2.VideoCapture(0)
         except:
             # Fallback to default backend
             cap = cv2.VideoCapture(0)
