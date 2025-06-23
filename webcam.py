@@ -221,7 +221,8 @@ def recording_worker():
                         if current_recording:
                             current_recording.write_frame(frame)
                 
-                time.sleep(1.0 / 30.0)  # 30 FPS recording
+                time.sleep(0.033)  # ~30 FPS
+
             
             # Stop current recording
             with recording_lock:
@@ -241,43 +242,45 @@ pcs = {}
 def initialize_camera():
     global cap
     try:
-        # Try V4L2 first (Linux)
-        try:
-            
-            cap = cv2.VideoCapture(0)
-        except:
-            # Fallback to default backend
-            cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)  # Explicitly use V4L2 backend
         if cap.isOpened():
-            # Set resolution
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
-            # Set frame rate
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  # Force MJPG for high FPS
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             cap.set(cv2.CAP_PROP_FPS, 30)
-            # Set buffer size
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            print("Successfully opened camera at index 0")
+            print("✅ Camera initialized: 640x480 MJPG @30 FPS")
             return True
+        else:
+            print("❌ Failed to open camera.")
+            return False
     except Exception as e:
-        print(f"Error opening camera: {str(e)}")
+        print(f"❌ Error initializing camera: {e}")
         if cap is not None:
             cap.release()
-    print("Failed to open camera at index 0")
-    return False
+        return False
 
 def frame_grabber():
     global latest_frame, frame_grabber_running
+    frame_count = 0
+    t0 = time.time()
     while frame_grabber_running:
         if cap is not None and cap.isOpened():
-            while True:
-                cap.grab()  # Grab all the pending frames, skip decode
-                if cap.grab():
-                    _, frame = cap.retrieve()
-                    if frame is not None:
-                        with frame_lock:
-                            latest_frame = frame.copy()
-                    break  # Exit inner loop once we get latest decoded frame
-        time.sleep(0.01)
+            # Flush stale frames
+            cap.grab()
+            success, frame = cap.retrieve()
+            if success and frame is not None:
+                with frame_lock:
+                    latest_frame = frame.copy()
+                frame_count += 1
+
+            # Show real FPS every 5 seconds
+            if time.time() - t0 >= 5:
+                fps = frame_count / (time.time() - t0)
+                print(f"[FrameGrabber] Real FPS: {fps:.1f}")
+                frame_count = 0
+                t0 = time.time()
+        time.sleep(0.001)
 
 # Start the frame grabber thread after camera initialization
 if not initialize_camera():
@@ -314,9 +317,9 @@ class WebcamTrack(MediaStreamTrack):
                 new_frame = av.VideoFrame.from_ndarray(frame_rgba, format='rgba')
                 new_frame.pts = int(pts)
                 new_frame.time_base = Fraction(1, 1000000)
-                await asyncio.sleep(0.05)  # 5 FPS cap
                 return new_frame
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.005)  # Slight delay while waiting
+
 
 async def index(request):
     content = open(os.path.join(ROOT, "client.html"), "r").read()
