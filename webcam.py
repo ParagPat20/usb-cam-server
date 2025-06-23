@@ -244,7 +244,7 @@ def initialize_camera():
         # Try V4L2 first (Linux)
         try:
             
-            cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+            cap = cv2.VideoCapture(0, cv2.CAP_GSTREAMER)
         except:
             # Fallback to default backend
             cap = cv2.VideoCapture(0)
@@ -269,11 +269,15 @@ def frame_grabber():
     global latest_frame, frame_grabber_running
     while frame_grabber_running:
         if cap is not None and cap.isOpened():
-            ret, frame = cap.read()
-            if ret and frame is not None:
-                with frame_lock:
-                    latest_frame = frame.copy()
-        time.sleep(0.01)  # Small sleep to avoid 100% CPU
+            while True:
+                cap.grab()  # Grab all the pending frames, skip decode
+                if cap.grab():
+                    _, frame = cap.retrieve()
+                    if frame is not None:
+                        with frame_lock:
+                            latest_frame = frame.copy()
+                    break  # Exit inner loop once we get latest decoded frame
+        time.sleep(0.01)
 
 # Start the frame grabber thread after camera initialization
 if not initialize_camera():
