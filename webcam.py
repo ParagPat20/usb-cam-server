@@ -595,6 +595,26 @@ async def on_shutdown(app):
     
     logger.info("Shutdown complete - all threads stopped")
 
+async def mjpeg_stream(request):
+    response = web.StreamResponse(
+        status=200,
+        reason='OK',
+        headers={
+            'Content-Type': 'multipart/x-mixed-replace; boundary=frame'
+        }
+    )
+    await response.prepare(request)
+    while True:
+        with frame_lock:
+            frame = None if latest_frame is None else latest_frame.copy()
+        if frame is not None:
+            ret, jpeg = cv2.imencode('.jpg', frame)
+            if ret:
+                await response.write(b'--frame\r\n')
+                await response.write(b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        await asyncio.sleep(0.05)  # ~20 FPS
+    return response
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WebRTC webcam server")
     parser.add_argument("--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)")
@@ -640,6 +660,7 @@ if __name__ == "__main__":
     app.router.add_get("/diagnostics", get_diagnostics)
     app.router.add_get("/recording_status", recording_status)
     app.router.add_post("/recording_status", recording_status)
+    app.router.add_get('/mjpeg', mjpeg_stream)
     
     # Configure CORS for all routes
     for route in list(app.router.routes()):
