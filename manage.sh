@@ -121,6 +121,22 @@ diagnose_tunnel() {
         echo "✗ No tunnel tmux session found"
     fi
     
+    # Check if local service is running on port 8080
+    echo "Checking local service on port 8080..."
+    if netstat -tln 2>/dev/null | grep -q ":8080 "; then
+        echo "✓ Local service is running on port 8080"
+        # Try to identify what's running on port 8080
+        local_pid=$(netstat -tlnp 2>/dev/null | grep ":8080 " | awk '{print $7}' | cut -d'/' -f1)
+        if [ -n "$local_pid" ]; then
+            local_process=$(ps -p $local_pid -o comm= 2>/dev/null)
+            echo "  Process: $local_process (PID: $local_pid)"
+        fi
+    else
+        echo "✗ No local service running on port 8080"
+        echo "  This is likely causing the 'Gateway timeout' error"
+        echo "  Start the webcam service first: ./manage.sh start-webcam"
+    fi
+    
     # Check SSH key permissions
     if [ -f "Jecon.pem" ]; then
         perms=$(stat -c "%a" Jecon.pem 2>/dev/null || stat -f "%Lp" Jecon.pem 2>/dev/null)
@@ -214,6 +230,107 @@ install_startup() {
     echo "Startup service installed and enabled"
 }
 
+# Function to check local service status
+check_local_service() {
+    echo "=== Local Service Status ==="
+    
+    # Check if webcam service is running
+    if tmux has-session -t webcam 2>/dev/null; then
+        echo "✓ Webcam tmux session exists"
+        if tmux list-panes -t webcam -F "#{pane_pid}" | xargs ps -p >/dev/null 2>&1; then
+            echo "✓ Webcam process is running"
+        else
+            echo "✗ Webcam session exists but process is not running"
+        fi
+    else
+        echo "✗ No webcam tmux session found"
+    fi
+    
+    # Check if port 8080 is listening
+    if netstat -tln 2>/dev/null | grep -q ":8080 "; then
+        echo "✓ Port 8080 is listening"
+        local_pid=$(netstat -tlnp 2>/dev/null | grep ":8080 " | awk '{print $7}' | cut -d'/' -f1)
+        if [ -n "$local_pid" ]; then
+            local_process=$(ps -p $local_pid -o comm= 2>/dev/null)
+            echo "  Process: $local_process (PID: $local_pid)"
+        fi
+    else
+        echo "✗ Port 8080 is not listening"
+        echo "  Start the webcam service: ./manage.sh start-webcam"
+    fi
+    
+    # Test local connection
+    echo "Testing local connection to port 8080..."
+    if curl -s --connect-timeout 5 http://localhost:8080 >/dev/null 2>&1; then
+        echo "✓ Local service responds on port 8080"
+    else
+        echo "✗ Local service does not respond on port 8080"
+        echo "  This will cause 'Gateway timeout' errors when accessing the tunnel"
+    fi
+}
+
+# Function to show comprehensive status
+show_status() {
+    echo "=== COMPREHENSIVE SYSTEM STATUS ==="
+    echo ""
+    
+    # Check local service
+    check_local_service
+    echo ""
+    
+    # Check tunnel
+    echo "=== Tunnel Status ==="
+    if tmux has-session -t tunnel 2>/dev/null; then
+        echo "✓ Tunnel tmux session exists"
+        if tmux list-panes -t tunnel -F "#{pane_pid}" | xargs ps -p >/dev/null 2>&1; then
+            echo "✓ Tunnel process is running"
+        else
+            echo "✗ Tunnel session exists but process is not running"
+        fi
+    else
+        echo "✗ No tunnel tmux session found"
+    fi
+    
+    # Check if tunnel port is listening on remote
+    echo "Checking remote tunnel port..."
+    if ssh -o ConnectTimeout=5 -o BatchMode=yes -i Jecon.pem ubuntu@3.7.55.44 "netstat -tln | grep :8080" >/dev/null 2>&1; then
+        echo "✓ Remote port 8080 is listening (tunnel is active)"
+    else
+        echo "✗ Remote port 8080 is not listening"
+        echo "  Tunnel may not be working properly"
+    fi
+    
+    echo ""
+    echo "=== Summary ==="
+    
+    # Determine overall status
+    local_running=false
+    tunnel_running=false
+    
+    if netstat -tln 2>/dev/null | grep -q ":8080 "; then
+        local_running=true
+    fi
+    
+    if tmux has-session -t tunnel 2>/dev/null && tmux list-panes -t tunnel -F "#{pane_pid}" | xargs ps -p >/dev/null 2>&1; then
+        tunnel_running=true
+    fi
+    
+    if [ "$local_running" = true ] && [ "$tunnel_running" = true ]; then
+        echo "✅ SYSTEM IS WORKING - Both local service and tunnel are running"
+        echo "   You should be able to access: http://3.7.55.44:8080"
+    elif [ "$local_running" = true ] && [ "$tunnel_running" = false ]; then
+        echo "⚠️  PARTIAL - Local service is running but tunnel is not"
+        echo "   Run: ./manage.sh start-tunnel"
+    elif [ "$local_running" = false ] && [ "$tunnel_running" = true ]; then
+        echo "⚠️  PARTIAL - Tunnel is running but local service is not"
+        echo "   This will cause 'Gateway timeout' errors"
+        echo "   Run: ./manage.sh start-webcam"
+    else
+        echo "❌ NOT WORKING - Neither local service nor tunnel is running"
+        echo "   Run: ./manage.sh start-all"
+    fi
+}
+
 # Main script
 case "$1" in
     "start-webcam")
@@ -267,8 +384,14 @@ case "$1" in
     "diagnose-tunnel")
         diagnose_tunnel
         ;;
+    "check-local-service")
+        check_local_service
+        ;;
+    "show-status")
+        show_status
+        ;;
     *)
-        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|check-tunnel|restart-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup|diagnose-tunnel}"
+        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|check-tunnel|restart-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup|diagnose-tunnel|check-local-service|show-status}"
         exit 1
         ;;
 esac 
