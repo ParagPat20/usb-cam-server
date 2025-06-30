@@ -99,6 +99,61 @@ restart_tunnel_if_needed() {
     fi
 }
 
+# Function to diagnose tunnel issues
+diagnose_tunnel() {
+    echo "=== Tunnel Diagnosis ==="
+    
+    # Check if tmux session exists
+    if tmux has-session -t tunnel 2>/dev/null; then
+        echo "✓ Tunnel tmux session exists"
+        
+        # Check if process is running
+        if tmux list-panes -t tunnel -F "#{pane_pid}" | xargs ps -p >/dev/null 2>&1; then
+            echo "✓ Tunnel process is running"
+            
+            # Show recent logs
+            echo "Recent tunnel logs:"
+            tmux capture-pane -t tunnel -p | tail -10
+        else
+            echo "✗ Tunnel session exists but process is not running"
+        fi
+    else
+        echo "✗ No tunnel tmux session found"
+    fi
+    
+    # Check SSH key permissions
+    if [ -f "Jecon.pem" ]; then
+        perms=$(stat -c "%a" Jecon.pem 2>/dev/null || stat -f "%Lp" Jecon.pem 2>/dev/null)
+        if [ "$perms" = "400" ]; then
+            echo "✓ SSH key has correct permissions (400)"
+        else
+            echo "✗ SSH key has incorrect permissions ($perms), should be 400"
+            echo "  Run: chmod 400 Jecon.pem"
+        fi
+    else
+        echo "✗ SSH key file (Jecon.pem) not found"
+    fi
+    
+    # Test SSH connectivity
+    echo "Testing SSH connectivity..."
+    if ssh -o ConnectTimeout=10 -o BatchMode=yes -i Jecon.pem ubuntu@3.7.55.44 "echo 'SSH connection successful'" 2>/dev/null; then
+        echo "✓ SSH connection to remote host successful"
+    else
+        echo "✗ SSH connection to remote host failed"
+        echo "  Check your internet connection and SSH key"
+    fi
+    
+    # Check if remote port is in use
+    echo "Checking remote port 8080..."
+    if ssh -o ConnectTimeout=5 -o BatchMode=yes -i Jecon.pem ubuntu@3.7.55.44 "netstat -tln | grep :8080" >/dev/null 2>&1; then
+        echo "✗ Remote port 8080 is already in use"
+        echo "  This is likely causing the 'remote port forwarding failed' error"
+        echo "  The tunnel script will try alternative ports automatically"
+    else
+        echo "✓ Remote port 8080 appears to be available"
+    fi
+}
+
 # Function to start MR72 MAVLink in tmux
 start_mr72_tmux() {
     if ! tmux has-session -t mr72 2>/dev/null; then
@@ -209,8 +264,11 @@ case "$1" in
     "setup")
         check_venv
         ;;
+    "diagnose-tunnel")
+        diagnose_tunnel
+        ;;
     *)
-        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|check-tunnel|restart-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup}"
+        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|check-tunnel|restart-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup|diagnose-tunnel}"
         exit 1
         ;;
 esac 
