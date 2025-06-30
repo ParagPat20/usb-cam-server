@@ -43,8 +43,8 @@ view_webcam_tmux() {
 start_tunnel_tmux() {
     if ! tmux has-session -t tunnel 2>/dev/null; then
         tmux new-session -d -s tunnel
-        tmux send-keys -t tunnel "cd $(pwd) && ./tunnel.sh" C-m
-        echo "Tunnel started in tmux session 'tunnel'"
+        tmux send-keys -t tunnel "cd $(pwd) && chmod +x tunnel.sh && ./tunnel.sh" C-m
+        echo "Tunnel started in tmux session 'tunnel' with auto-restart capability"
     else
         echo "Tunnel tmux session already exists"
     fi
@@ -66,6 +66,36 @@ view_tunnel_tmux() {
         tmux attach-session -t tunnel
     else
         echo "No tunnel tmux session found"
+    fi
+}
+
+# Function to check tunnel status
+check_tunnel_status() {
+    if tmux has-session -t tunnel 2>/dev/null; then
+        # Check if the tunnel process is still running
+        if tmux list-panes -t tunnel -F "#{pane_pid}" | xargs ps -p >/dev/null 2>&1; then
+            echo "Tunnel is running"
+            return 0
+        else
+            echo "Tunnel session exists but process is not running"
+            return 1
+        fi
+    else
+        echo "No tunnel session found"
+        return 1
+    fi
+}
+
+# Function to restart tunnel if needed
+restart_tunnel_if_needed() {
+    if ! check_tunnel_status >/dev/null 2>&1; then
+        echo "Tunnel is not running properly, restarting..."
+        stop_tunnel_tmux
+        sleep 2
+        start_tunnel_tmux
+        echo "Tunnel restarted"
+    else
+        echo "Tunnel is running properly"
     fi
 }
 
@@ -149,6 +179,12 @@ case "$1" in
     "view-tunnel")
         view_tunnel_tmux
         ;;
+    "check-tunnel")
+        check_tunnel_status
+        ;;
+    "restart-tunnel")
+        restart_tunnel_if_needed
+        ;;
     "start-mr72")
         start_mr72_tmux
         ;;
@@ -174,7 +210,7 @@ case "$1" in
         check_venv
         ;;
     *)
-        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup}"
+        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|check-tunnel|restart-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup}"
         exit 1
         ;;
 esac 
