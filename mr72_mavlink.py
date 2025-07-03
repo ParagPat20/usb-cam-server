@@ -35,7 +35,6 @@ def parse_packet(pkt):
         mm_to_cm(d3) if sid == 3 else
         FAKE_DISTANCE
     ) for sid in range(1,9)}
-    print("[RAW]    " + ", ".join(f"S{sid}={raw[sid]}" for sid in range(1,9)))
     return raw
 
 def smooth(raw):
@@ -45,12 +44,20 @@ def smooth(raw):
         kf.predict()
         kf.update(np.array([[meas]]))
         smoothed[sid] = float(kf.x)
-    print("[KALMAN] " + ", ".join(f"S{sid}={smoothed[sid]:.1f}" for sid in sorted(smoothed)))
     return smoothed
 
 def send_distances(mav, dist):
-    t = time.time()
-    print(f"[SEND @ {t:.3f}]" + ", ".join(f"S{sid}:{int(dist[sid])}cm" for sid in sorted(dist)))
+    global last_send_time
+    current_time = time.time()
+    
+    if 'last_send_time' in globals():
+        interval = current_time - last_send_time
+        frequency = 1.0 / interval if interval > 0 else 0
+        print(f"[FREQ] Send interval: {interval*1000:.1f}ms ({frequency:.1f} Hz)")
+    
+    last_send_time = current_time
+    print(f"[SEND @ {current_time:.3f}]" + ", ".join(f"S{sid}:{int(dist[sid])}cm" for sid in sorted(dist)))
+    
     for sid, d in dist.items():
         try:
             mav.mav.distance_sensor_send(
