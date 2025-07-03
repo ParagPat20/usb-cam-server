@@ -9,7 +9,7 @@ FC_PORT, FC_BAUD = '/dev/serial/by-id/usb-ArduPilot_Pixhawk6X_36004E001351333031
 FAKE_DISTANCE = 3000
 MIN_DISTANCE, MAX_DISTANCE = 30, 3000
 SECTOR_ORIENTATION = {2:0,1:1,8:2,7:3,6:4,5:5,4:6,3:7}
-SEND_INTERVAL = 0.05  # 10 Hz
+SEND_INTERVAL = 0.1  # 10 Hz
 RECONNECT_DELAY = 2.0  # seconds to wait before reconnecting
 
 # 📈 Kalman setup for each sector
