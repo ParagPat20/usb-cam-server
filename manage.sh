@@ -472,6 +472,75 @@ check_ec2_security() {
     echo "3. SSH (22) - Source: Your IP or 0.0.0.0/0"
 }
 
+# Function to download logs from the flight-controller via MAVLink
+# This will pause the MR72 bridge (tmux session "mr72") while the serial
+# link is in use, run the Python downloader, then resume the bridge.
+download_logs() {
+    mkdir -p logs  # make sure destination exists
+
+    # Pause MR72 session if running
+    local mr72_was_running=false
+    if tmux has-session -t mr72 2>/dev/null; then
+        mr72_was_running=true
+        echo "Pausing MR72 MAVLink session…"
+        stop_mr72_tmux
+        sleep 2  # allow serial port to free
+    fi
+
+    # Activate virtual-env if available
+    if [ -d "venv" ]; then
+        source venv/bin/activate
+    fi
+
+    echo "Starting log download (this may take a while)…"
+    python3 log_dwnld.py --out logs
+    local dl_status=$?
+
+    # Deactivate venv if we activated it
+    if [ -n "$VIRTUAL_ENV" ]; then
+        deactivate
+    fi
+
+    # Resume MR72 session if it was previously running
+    if [ "$mr72_was_running" = true ]; then
+        echo "Resuming MR72 MAVLink session…"
+        start_mr72_tmux
+    fi
+
+    return $dl_status
+}
+
+# Function to expose a single log file over a temporary HTTP server so it can
+# be downloaded to a laptop. Usage: ./manage.sh ftplog <log_filename>
+ftplog() {
+    local log_name="$1"
+    if [ -z "$log_name" ]; then
+        echo "Usage: $0 ftplog {log_name}"
+        return 1
+    fi
+
+    if [ ! -f "logs/$log_name" ]; then
+        echo "Log file logs/$log_name not found"
+        return 1
+    fi
+
+    # Start a lightweight HTTP server in the background
+    pushd logs >/dev/null || return 1
+    echo "Starting temporary HTTP server on port 9000 …"
+    python3 -m http.server 9000 &
+    local server_pid=$!
+    popd >/dev/null
+
+    local ip=$(hostname -I | awk '{print $1}')
+    echo "==============================================="
+    echo "Download URL: http://$ip:9000/$log_name"
+    echo "Press <ENTER> once the download is complete to stop the server."
+    echo "==============================================="
+    read -r _
+    kill $server_pid
+    echo "HTTP server stopped."
+}
+
 # Main script
 case "$1" in
     "start-webcam")
@@ -540,8 +609,15 @@ case "$1" in
     "check-ec2-security")
         check_ec2_security
         ;;
+    "download-logs")
+        download_logs
+        ;;
+    "ftplog")
+        shift
+        ftplog "$1"
+        ;;
     *)
-        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|check-tunnel|restart-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup|diagnose-tunnel|check-local-service|show-status|diagnose-ec2-nginx|fix-ec2-nginx|check-ec2-security}"
+        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|check-tunnel|restart-tunnel|start-mr72|stop-mr72|view-mr72|download-logs|ftplog|start-all|stop-all|list|install-startup|setup|diagnose-tunnel|check-local-service|show-status|diagnose-ec2-nginx|fix-ec2-nginx|check-ec2-security}"
         exit 1
         ;;
 esac 
