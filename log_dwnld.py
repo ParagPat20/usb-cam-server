@@ -160,37 +160,69 @@ async def ftp_download(args):
     except Exception:
         print("[ERROR] [MAVFTP] FTP reset failed. Trying anyway…")
 
-    # Some boards expose logs under /LOGS, others under /APM/LOGS
-    remote_dir_candidates = [APM_LOG_DIR, "/LOGS"]
-    remote_dir = None
-    for d in remote_dir_candidates:
+    # ------------------------------------------------------------------
+    # Locate log files. First try common directories; if not found, walk
+    # the filesystem starting from root and collect *.BIN files.
+    # ------------------------------------------------------------------
+
+    log_entries = []  # list of tuples (remote_path, size)
+
+    async def add_logs_in_dir(path: str):
         try:
-            await ftp.list_directory(d)  # probe
-            remote_dir = d
-            break
+            data = await ftp.list_directory(path)
         except Exception:
-            continue
+            return False
+        for f in getattr(data, "files", []):
+            if f.name.lower().endswith(".bin"):
+                full = f"{path}/{f.name}" if path else f.name
+                log_entries.append((full, getattr(f, "size", 0)))
+        return True
 
-    if remote_dir is None:
-        raise RuntimeError("Could not locate remote log directory via MAVFTP")
+    # First probe typical locations
+    for d in [APM_LOG_DIR, "/LOGS", "LOGS"]:
+        if await add_logs_in_dir(d):
+            # if we found any logs in this directory, no need to probe others
+            if log_entries:
+                break
 
-    entries = await ftp.list_directory(remote_dir)
-    if not entries.files:
-        print("[INFO] [MAVFTP] No log files found on the vehicle.")
-        return
+    # If still nothing, walk recursively from root "" (or "/")
+    if not log_entries:
+        print("[INFO] [MAVFTP] Searching entire filesystem for *.BIN logs …")
 
-    for f in entries.files:
-        if not f.name.lower().endswith(".bin"):
-            continue
+        stack = [""]  # start at FTP root
+        visited = set()
+        while stack:
+            current = stack.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            try:
+                data = await ftp.list_directory(current)
+            except Exception:
+                continue
 
-        remote_path = f"{remote_dir}/{f.name}"
-        local_path = os.path.join(args.out, f.name)
+            # enqueue subdirectories
+            for d in getattr(data, "dirs", []):
+                sub = f"{current}/{d.name}" if current else d.name
+                stack.append(sub)
+
+            for f in getattr(data, "files", []):
+                if f.name.lower().endswith(".bin"):
+                    full = f"{current}/{f.name}" if current else f.name
+                    log_entries.append((full, getattr(f, "size", 0)))
+
+    if not log_entries:
+        raise RuntimeError("Could not locate any *.BIN log files via MAVFTP")
+
+    for remote_path, size in log_entries:
+        fname = os.path.basename(remote_path)
+        local_path = os.path.join(args.out, fname)
 
         if os.path.exists(local_path):
             print(f"[SKIP] {local_path} already exists - skipping.")
             continue
 
-        print(f"[INFO] [MAVFTP] Downloading {f.name} ({f.size/1024:.1f} kB)…")
+        print(f"[INFO] [MAVFTP] Downloading {fname} ({size/1024:.1f} kB)…")
 
         start_time = time.time()
 
