@@ -331,6 +331,147 @@ show_status() {
     fi
 }
 
+# Function to diagnose EC2 nginx configuration
+diagnose_ec2_nginx() {
+    echo "=== EC2 Nginx Diagnosis ==="
+    
+    # Check if nginx is running on EC2
+    echo "Checking nginx status on EC2..."
+    if ssh -o ConnectTimeout=10 -i Jecon.pem ubuntu@3.7.55.44 "sudo systemctl is-active nginx" 2>/dev/null; then
+        echo "✓ Nginx is running on EC2"
+    else
+        echo "✗ Nginx is not running on EC2"
+        echo "  Run: ./manage.sh fix-ec2-nginx"
+        return 1
+    fi
+    
+    # Check nginx configuration
+    echo "Checking nginx configuration..."
+    if ssh -o ConnectTimeout=10 -i Jecon.pem ubuntu@3.7.55.44 "sudo nginx -t" 2>/dev/null; then
+        echo "✓ Nginx configuration is valid"
+    else
+        echo "✗ Nginx configuration has errors"
+        echo "  Run: ./manage.sh fix-ec2-nginx"
+        return 1
+    fi
+    
+    # Check if nginx is configured to proxy to port 8080
+    echo "Checking nginx proxy configuration..."
+    nginx_config=$(ssh -o ConnectTimeout=10 -i Jecon.pem ubuntu@3.7.55.44 "sudo cat /etc/nginx/sites-available/default 2>/dev/null || sudo cat /etc/nginx/nginx.conf 2>/dev/null")
+    
+    if echo "$nginx_config" | grep -q "proxy_pass.*8080"; then
+        echo "✓ Nginx is configured to proxy to port 8080"
+    else
+        echo "✗ Nginx is NOT configured to proxy to port 8080"
+        echo "  This is likely the cause of the gateway timeout"
+        echo "  Run: ./manage.sh fix-ec2-nginx"
+        return 1
+    fi
+    
+    # Check if port 80 is open in security group
+    echo "Testing external access to port 80..."
+    if curl -s --connect-timeout 10 http://3.7.55.44 >/dev/null 2>&1; then
+        echo "✓ Port 80 is accessible externally"
+    else
+        echo "✗ Port 80 is not accessible externally"
+        echo "  Check EC2 security group settings"
+    fi
+    
+    # Test direct access to port 8080
+    echo "Testing direct access to port 8080..."
+    if curl -s --connect-timeout 10 http://3.7.55.44:8080 >/dev/null 2>&1; then
+        echo "✓ Port 8080 is accessible directly"
+        echo "  The tunnel is working correctly"
+    else
+        echo "✗ Port 8080 is not accessible directly"
+        echo "  This suggests a firewall/security group issue"
+    fi
+    
+    echo ""
+    echo "=== Recommendations ==="
+    echo "1. If nginx is not configured properly, run: ./manage.sh fix-ec2-nginx"
+    echo "2. If port 80 is not accessible, check EC2 security group inbound rules"
+    echo "3. If port 8080 is not accessible, check EC2 security group inbound rules"
+}
+
+# Function to fix EC2 nginx configuration
+fix_ec2_nginx() {
+    echo "=== Fixing EC2 Nginx Configuration ==="
+    
+    # Create nginx configuration that proxies to port 8080
+    nginx_config='server {
+    listen 80;
+    server_name _;
+    
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket support for WebRTC
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # Timeout settings
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+}'
+    
+    echo "Creating nginx configuration..."
+    ssh -o ConnectTimeout=10 -i Jecon.pem ubuntu@3.7.55.44 "echo '$nginx_config' | sudo tee /etc/nginx/sites-available/default > /dev/null"
+    
+    echo "Testing nginx configuration..."
+    if ssh -o ConnectTimeout=10 -i Jecon.pem ubuntu@3.7.55.44 "sudo nginx -t"; then
+        echo "✓ Nginx configuration is valid"
+        
+        echo "Reloading nginx..."
+        if ssh -o ConnectTimeout=10 -i Jecon.pem ubuntu@3.7.55.44 "sudo systemctl reload nginx"; then
+            echo "✓ Nginx reloaded successfully"
+            echo ""
+            echo "✅ Nginx is now configured to proxy requests to port 8080"
+            echo "   Try accessing: http://3.7.55.44 (without port number)"
+        else
+            echo "✗ Failed to reload nginx"
+        fi
+    else
+        echo "✗ Nginx configuration is invalid"
+        echo "  Check the configuration manually"
+    fi
+}
+
+# Function to check EC2 security group
+check_ec2_security() {
+    echo "=== EC2 Security Group Check ==="
+    
+    echo "Checking if port 80 is open..."
+    if curl -s --connect-timeout 10 http://3.7.55.44 >/dev/null 2>&1; then
+        echo "✓ Port 80 is accessible"
+    else
+        echo "✗ Port 80 is not accessible"
+        echo "  Add inbound rule: HTTP (80) from 0.0.0.0/0"
+    fi
+    
+    echo "Checking if port 8080 is open..."
+    if curl -s --connect-timeout 10 http://3.7.55.44:8080 >/dev/null 2>&1; then
+        echo "✓ Port 8080 is accessible"
+    else
+        echo "✗ Port 8080 is not accessible"
+        echo "  Add inbound rule: Custom TCP (8080) from 0.0.0.0/0"
+    fi
+    
+    echo ""
+    echo "=== Security Group Configuration ==="
+    echo "In your EC2 console, ensure these inbound rules exist:"
+    echo "1. HTTP (80) - Source: 0.0.0.0/0"
+    echo "2. Custom TCP (8080) - Source: 0.0.0.0/0 (if you want direct access)"
+    echo "3. SSH (22) - Source: Your IP or 0.0.0.0/0"
+}
+
 # Main script
 case "$1" in
     "start-webcam")
@@ -390,8 +531,17 @@ case "$1" in
     "show-status")
         show_status
         ;;
+    "diagnose-ec2-nginx")
+        diagnose_ec2_nginx
+        ;;
+    "fix-ec2-nginx")
+        fix_ec2_nginx
+        ;;
+    "check-ec2-security")
+        check_ec2_security
+        ;;
     *)
-        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|check-tunnel|restart-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup|diagnose-tunnel|check-local-service|show-status}"
+        echo "Usage: $0 {start-webcam|stop-webcam|view-webcam|start-tunnel|stop-tunnel|view-tunnel|check-tunnel|restart-tunnel|start-mr72|stop-mr72|view-mr72|start-all|stop-all|list|install-startup|setup|diagnose-tunnel|check-local-service|show-status|diagnose-ec2-nginx|fix-ec2-nginx|check-ec2-security}"
         exit 1
         ;;
 esac 
