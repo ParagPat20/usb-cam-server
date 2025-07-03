@@ -241,38 +241,115 @@ pcs = {}
 
 def initialize_camera():
     global cap
-    try:
-        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)  # Explicitly use V4L2 backend
-        if cap.isOpened():
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  # Force MJPG for high FPS
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            cap.set(cv2.CAP_PROP_FPS, 30)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            print("✅ Camera initialized: 640x480 MJPG @30 FPS")
-            return True
-        else:
-            print("❌ Failed to open camera.")
-            return False
-    except Exception as e:
-        print(f"❌ Error initializing camera: {e}")
-        if cap is not None:
-            cap.release()
-        return False
+    
+    # Define different backends to try (platform-specific)
+    if platform.system() == "Windows":
+        backends = [
+            cv2.CAP_DSHOW,  # DirectShow (Windows)
+            cv2.CAP_MSMF,   # Media Foundation (Windows)
+            cv2.CAP_ANY     # Auto-detect
+        ]
+    elif platform.system() == "Linux":
+        backends = [
+            cv2.CAP_V4L2,   # Video4Linux2 (Linux)
+            cv2.CAP_V4L,    # Video4Linux (Linux)
+            cv2.CAP_ANY     # Auto-detect
+        ]
+    else:  # macOS and others
+        backends = [
+            cv2.CAP_AVFOUNDATION,  # AVFoundation (macOS)
+            cv2.CAP_ANY            # Auto-detect
+        ]
+    
+    # Try different camera indices (0, 1, 2)
+    camera_indices = [0, 1, 2]
+    
+    for backend in backends:
+        for camera_index in camera_indices:
+            try:
+                print(f"🔍 Trying camera {camera_index} with backend {backend}...")
+                cap = cv2.VideoCapture(camera_index, backend)
+                
+                if cap.isOpened():
+                    # Test if we can actually read a frame
+                    ret, test_frame = cap.read()
+                    if ret and test_frame is not None:
+                        # Configure camera settings
+                        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))  # Force MJPG for high FPS
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                        cap.set(cv2.CAP_PROP_FPS, 30)
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        
+                        # Get actual camera properties
+                        actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                        actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                        actual_fps = cap.get(cv2.CAP_PROP_FPS)
+                        
+                        print(f"✅ Camera initialized: {actual_width}x{actual_height} @{actual_fps} FPS (index: {camera_index}, backend: {backend})")
+                        return True
+                    else:
+                        print(f"❌ Camera {camera_index} opened but cannot read frames")
+                        cap.release()
+                        cap = None
+                else:
+                    print(f"❌ Failed to open camera {camera_index} with backend {backend}")
+                    if cap is not None:
+                        cap.release()
+                        cap = None
+                        
+            except Exception as e:
+                print(f"❌ Error trying camera {camera_index} with backend {backend}: {e}")
+                if cap is not None:
+                    cap.release()
+                    cap = None
+                continue
+    
+    print("❌ No working camera found after trying all combinations")
+    return False
 
 def frame_grabber():
-    global latest_frame, frame_grabber_running
+    global latest_frame, frame_grabber_running, cap
     frame_count = 0
     t0 = time.time()
+    consecutive_failures = 0
+    max_consecutive_failures = 10
+    
     while frame_grabber_running:
-        if cap is not None and cap.isOpened():
-            # Flush stale frames
-            cap.grab()
-            success, frame = cap.retrieve()
-            if success and frame is not None:
-                with frame_lock:
-                    latest_frame = frame.copy()
-                frame_count += 1
+        try:
+            if cap is not None and cap.isOpened():
+                # Use read() instead of grab() + retrieve() for better reliability
+                success, frame = cap.read()
+                if success and frame is not None:
+                    with frame_lock:
+                        latest_frame = frame.copy()
+                    frame_count += 1
+                    consecutive_failures = 0  # Reset failure counter on success
+                else:
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        print(f"[FrameGrabber] Too many consecutive failures ({consecutive_failures}), attempting to reinitialize camera...")
+                        # Try to reinitialize the camera
+                        cap.release()
+                        cap = None
+                        if initialize_camera():
+                            consecutive_failures = 0
+                            print("[FrameGrabber] Camera reinitialized successfully")
+                        else:
+                            print("[FrameGrabber] Failed to reinitialize camera, continuing without camera")
+                            consecutive_failures = 0  # Reset to avoid spam
+            else:
+                consecutive_failures += 1
+                if consecutive_failures >= max_consecutive_failures:
+                    print("[FrameGrabber] Camera not available, attempting to initialize...")
+                    if initialize_camera():
+                        consecutive_failures = 0
+                        print("[FrameGrabber] Camera initialized successfully")
+                    else:
+                        print("[FrameGrabber] Failed to initialize camera")
+                        consecutive_failures = 0  # Reset to avoid spam
+                        time.sleep(1)  # Wait longer when no camera is available
+                        continue
 
             # Show real FPS every 5 seconds
             if time.time() - t0 >= 5:
@@ -280,7 +357,28 @@ def frame_grabber():
                 print(f"[FrameGrabber] Real FPS: {fps:.1f}")
                 frame_count = 0
                 t0 = time.time()
-        time.sleep(0.001)
+                
+        except Exception as e:
+            consecutive_failures += 1
+            print(f"[FrameGrabber] Error reading frame: {e}")
+            if consecutive_failures >= max_consecutive_failures:
+                print("[FrameGrabber] Too many errors, attempting to reinitialize camera...")
+                try:
+                    if cap is not None:
+                        cap.release()
+                        cap = None
+                    if initialize_camera():
+                        consecutive_failures = 0
+                        print("[FrameGrabber] Camera reinitialized after error")
+                    else:
+                        consecutive_failures = 0  # Reset to avoid spam
+                        time.sleep(1)
+                except Exception as reinit_error:
+                    print(f"[FrameGrabber] Failed to reinitialize camera: {reinit_error}")
+                    consecutive_failures = 0  # Reset to avoid spam
+                    time.sleep(1)
+        
+        time.sleep(0.001)  # Small delay to prevent excessive CPU usage
 
 # Start the frame grabber thread after camera initialization
 if not initialize_camera():
