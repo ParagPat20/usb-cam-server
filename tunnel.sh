@@ -8,6 +8,7 @@ LOCAL_PORT=8080
 REMOTE_PORT=8080
 RETRY_DELAY=5  # seconds to wait before retrying
 MAX_RETRIES=3  # maximum retries with same port before trying alternative
+PING_INTERVAL=5  # seconds between connectivity checks during active tunnel
 
 # Function to log messages with timestamp
 log_message() {
@@ -66,46 +67,69 @@ while true; do
     done
 
     log_message "Attempting to establish SSH tunnel..."
-    
-    # Create the SSH tunnel with -g flag to allow remote hosts to connect
-    # Capture both stdout and stderr to detect specific errors
-    tunnel_output=$(ssh -N -g -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -R 0.0.0.0:$REMOTE_PORT:localhost:$LOCAL_PORT -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST 2>&1)
-    tunnel_exit_code=$?
-    
-    # Check for specific error messages
-    if echo "$tunnel_output" | grep -q "remote port forwarding failed for listen port"; then
-        log_message "ERROR: Remote port $REMOTE_PORT is already in use or not available"
-        log_message "Tunnel output: $tunnel_output"
-        
-        # Try to find an alternative port
-        log_message "Attempting to find an alternative port..."
-        find_available_port $REMOTE_PORT
-        alternative_port=$?
-        
-        if [ $alternative_port -ne $REMOTE_PORT ]; then
-            log_message "Trying alternative port $alternative_port..."
-            tunnel_output=$(ssh -N -g -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -R 0.0.0.0:$alternative_port:localhost:$LOCAL_PORT -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST 2>&1)
-            tunnel_exit_code=$?
-            
-            if [ $tunnel_exit_code -eq 0 ]; then
-                log_message "SUCCESS: Tunnel established on alternative port $alternative_port"
+
+    # Use a temp log file so we can capture any immediate errors (e.g., port conflict)
+    tunnel_log=$(mktemp)
+
+    # Launch SSH in the background so we can monitor connectivity ourselves
+    ssh -N -g \
+        -o ExitOnForwardFailure=yes \
+        -o ServerAliveInterval=30 \
+        -o ServerAliveCountMax=3 \
+        -R 0.0.0.0:$REMOTE_PORT:localhost:$LOCAL_PORT \
+        -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST \
+        > "$tunnel_log" 2>&1 &
+    SSH_PID=$!
+
+    # Give SSH a moment to fail fast if something is wrong (e.g., remote port already in use)
+    sleep 3
+
+    if ! kill -0 $SSH_PID 2>/dev/null; then
+        # SSH process already exited – inspect the log for reasons
+        tunnel_output=$(cat "$tunnel_log")
+        rm -f "$tunnel_log"
+
+        if echo "$tunnel_output" | grep -q "remote port forwarding failed for listen port"; then
+            log_message "ERROR: Remote port $REMOTE_PORT is already in use or not available"
+
+            # Try to find an alternative port
+            log_message "Attempting to find an alternative port..."
+            find_available_port $REMOTE_PORT
+            alternative_port=$?
+
+            if [ $alternative_port -ne $REMOTE_PORT ]; then
+                log_message "Switching to alternative port $alternative_port and retrying..."
                 REMOTE_PORT=$alternative_port
             else
-                log_message "ERROR: Failed to establish tunnel on alternative port $alternative_port"
-                log_message "Tunnel output: $tunnel_output"
+                log_message "ERROR: No alternative ports available"
+                log_message "Waiting $RETRY_DELAY seconds before retrying..."
+                sleep $RETRY_DELAY
             fi
         else
-            log_message "ERROR: No alternative ports available"
+            log_message "SSH tunnel failed to start. Output: $tunnel_output"
+            log_message "Waiting $RETRY_DELAY seconds before retrying..."
+            sleep $RETRY_DELAY
         fi
-    elif [ $tunnel_exit_code -ne 0 ]; then
-        log_message "SSH tunnel failed with exit code $tunnel_exit_code"
-        log_message "Tunnel output: $tunnel_output"
+        # Proceed to next iteration of main while-loop
+        continue
     else
-        log_message "SSH tunnel exited normally"
+        log_message "SUCCESS: SSH tunnel established (PID $SSH_PID) on remote port $REMOTE_PORT"
+        rm -f "$tunnel_log"
     fi
-    
-    log_message "Waiting $RETRY_DELAY seconds before retrying..."
+
+    # Monitor the tunnel and internet connectivity
+    while kill -0 $SSH_PID 2>/dev/null; do
+        sleep $PING_INTERVAL
+        if ! check_internet; then
+            log_message "Internet connection lost. Terminating SSH tunnel (PID $SSH_PID)..."
+            kill $SSH_PID
+            wait $SSH_PID 2>/dev/null
+            break
+        fi
+    done
+
+    log_message "SSH tunnel process ended or was terminated. Waiting $RETRY_DELAY seconds before retrying..."
     sleep $RETRY_DELAY
-    
+
     log_message "Restarting tunnel..."
 done 
