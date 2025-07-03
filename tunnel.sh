@@ -9,6 +9,7 @@ REMOTE_PORT=8080
 RETRY_DELAY=5  # seconds to wait before retrying
 MAX_RETRIES=3  # legacy variable (currently unused, tunnel always retries same port)
 PING_INTERVAL=5  # seconds between connectivity checks during active tunnel
+PING_FAILURE_THRESHOLD=3  # consecutive failed pings before considering connection lost
 
 # Function to log messages with timestamp
 log_message() {
@@ -94,7 +95,24 @@ while true; do
 
             # Attempt to free the port by terminating any existing listeners
             log_message "Attempting to free remote port $REMOTE_PORT..."
-            ssh -o ConnectTimeout=5 -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST "fuser -k ${REMOTE_PORT}/tcp" >/dev/null 2>&1 || true
+            ssh -o ConnectTimeout=5 -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST "sudo fuser -k ${REMOTE_PORT}/tcp" >/dev/null 2>&1 || true
+            # Run additional EC2 diagnostics (nginx, firewall)
+            if [ -x ./manage.sh ]; then
+                log_message "Running EC2 nginx diagnostics via manage.sh..."
+
+                diag_log=$(mktemp)
+                ./manage.sh diagnose-ec2-nginx > "$diag_log" 2>&1
+                diag_exit=$?
+                while read -r line; do log_message "[DIAG] $line"; done < "$diag_log"
+                rm -f "$diag_log"
+
+                if [ $diag_exit -ne 0 ]; then
+                    log_message "Diagnostics reported issues. Attempting to fix nginx configuration..."
+                    ./manage.sh fix-ec2-nginx | while read -r line; do log_message "[FIX] $line"; done
+                else
+                    log_message "Diagnostics passed. No nginx fix needed."
+                fi
+            fi
             log_message "Waiting $RETRY_DELAY seconds before retrying..."
             sleep $RETRY_DELAY
         else
@@ -105,20 +123,34 @@ while true; do
         # Proceed to next iteration of main while-loop
         continue
     else
-        log_message "SUCCESS: SSH tunnel established (PID $SSH_PID) on remote port $REMOTE_PORT"
+        log_message "SUCCESS: SSH tunnel established (PID $SSH_PID) on remote port $REMOTE_PORT (log: $tunnel_log)"
         rm -f "$tunnel_log"
     fi
 
     # Monitor the tunnel and internet connectivity
+    ping_fail_count=0
     while kill -0 $SSH_PID 2>/dev/null; do
         sleep $PING_INTERVAL
-        if ! check_internet; then
-            log_message "Internet connection lost. Terminating SSH tunnel (PID $SSH_PID)..."
-            kill $SSH_PID
-            wait $SSH_PID 2>/dev/null
-            break
+        if check_internet; then
+            ping_fail_count=0  # reset counter on success
+        else
+            ping_fail_count=$((ping_fail_count + 1))
+            log_message "Ping to 8.8.8.8 failed ($ping_fail_count/$PING_FAILURE_THRESHOLD)"
+            if [ $ping_fail_count -ge $PING_FAILURE_THRESHOLD ]; then
+                log_message "Internet connection appears down. Terminating SSH tunnel (PID $SSH_PID)..."
+                kill $SSH_PID
+                wait $SSH_PID 2>/dev/null
+                break
+            fi
         fi
     done
+
+    # Display last lines of the SSH tunnel log for diagnosis
+    if [ -f "$tunnel_log" ]; then
+        log_message "=== SSH tunnel log tail ==="
+        tail -n 20 "$tunnel_log" | while read -r line; do log_message "$line"; done
+        rm -f "$tunnel_log"
+    fi
 
     log_message "SSH tunnel process ended or was terminated. Waiting $RETRY_DELAY seconds before retrying..."
     sleep $RETRY_DELAY
