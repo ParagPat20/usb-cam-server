@@ -7,7 +7,7 @@ EC2_KEY_PATH="Jecon.pem"
 LOCAL_PORT=8080
 REMOTE_PORT=8080
 RETRY_DELAY=5  # seconds to wait before retrying
-MAX_RETRIES=3  # maximum retries with same port before trying alternative
+MAX_RETRIES=3  # legacy variable (currently unused, tunnel always retries same port)
 PING_INTERVAL=5  # seconds between connectivity checks during active tunnel
 
 # Function to log messages with timestamp
@@ -92,19 +92,11 @@ while true; do
         if echo "$tunnel_output" | grep -q "remote port forwarding failed for listen port"; then
             log_message "ERROR: Remote port $REMOTE_PORT is already in use or not available"
 
-            # Try to find an alternative port
-            log_message "Attempting to find an alternative port..."
-            find_available_port $REMOTE_PORT
-            alternative_port=$?
-
-            if [ $alternative_port -ne $REMOTE_PORT ]; then
-                log_message "Switching to alternative port $alternative_port and retrying..."
-                REMOTE_PORT=$alternative_port
-            else
-                log_message "ERROR: No alternative ports available"
-                log_message "Waiting $RETRY_DELAY seconds before retrying..."
-                sleep $RETRY_DELAY
-            fi
+            # Attempt to free the port by terminating any existing listeners
+            log_message "Attempting to free remote port $REMOTE_PORT..."
+            ssh -o ConnectTimeout=5 -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST "fuser -k ${REMOTE_PORT}/tcp" >/dev/null 2>&1 || true
+            log_message "Waiting $RETRY_DELAY seconds before retrying..."
+            sleep $RETRY_DELAY
         else
             log_message "SSH tunnel failed to start. Output: $tunnel_output"
             log_message "Waiting $RETRY_DELAY seconds before retrying..."

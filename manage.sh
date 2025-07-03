@@ -164,7 +164,7 @@ diagnose_tunnel() {
     if ssh -o ConnectTimeout=5 -o BatchMode=yes -i Jecon.pem ubuntu@3.7.55.44 "netstat -tln | grep :8080" >/dev/null 2>&1; then
         echo "✗ Remote port 8080 is already in use"
         echo "  This is likely causing the 'remote port forwarding failed' error"
-        echo "  The tunnel script will try alternative ports automatically"
+        echo "  The tunnel script will attempt to free the port and retry on port 8080"
     else
         echo "✓ Remote port 8080 appears to be available"
     fi
