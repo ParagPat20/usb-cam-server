@@ -18,10 +18,23 @@ any ArduPilot/PX4 board that supports the LOG_DOWNLOAD protocol.
 import os
 import time
 import argparse
+
+# Try to use MAVSDK for high-speed MAVFTP. Fall back to PyMAVLink if MAVSDK is
+# not available (or connection fails).
+try:
+    import asyncio
+    from mavsdk import System  # type: ignore
+    MavsdkAvailable = True
+except ImportError:
+    MavsdkAvailable = False
+
 from pymavlink import mavutil
 
 CHUNK_SIZE = 90  # Bytes per LOG_DATA payload (fixed for ArduPilot)
 SILENCE_TIMEOUT = 2  # Seconds without LOG_ENTRY before we assume the list is complete
+
+# Default DataFlash log directory for ArduPilot when accessed via MAVFTP
+APM_LOG_DIR = "/APM/LOGS"
 
 def request_log_list(mav):
     """Return a dict {log_id: size_bytes}."""
@@ -84,15 +97,24 @@ def erase_logs(mav):
         print("[WARN] Did not receive ACK for log erase (or it was rejected).")
 
 def main():
-    parser = argparse.ArgumentParser(description="Download DataFlash logs via MAVLink")
+    parser = argparse.ArgumentParser(description="Download DataFlash logs (prefers MAVFTP for speed)")
     parser.add_argument("--port", default="/dev/serial/by-id/usb-ArduPilot_Pixhawk6X_36004E001351333031333637-if00", help="Serial port of the flight controller")
     parser.add_argument("--baud", type=int, default=115200, help="Baudrate")
     parser.add_argument("--out", default="logs", help="Destination directory for downloaded logs")
+    parser.add_argument("--no-ftp", action="store_true", help="Force classic LOG_REQUEST download (debug)")
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
 
-    print(f"[INFO] Connecting to {args.port} @ {args.baud} baud …")
+    if MavsdkAvailable and not args.no_ftp:
+        try:
+            asyncio.run(ftp_download(args))
+            return
+        except Exception as exc:
+            print(f"[WARN] MAVFTP failed ({exc}). Falling back to LOG_REQUEST method…")
+
+    # Fallback to slow LOG_REQUEST_DATA method
+    print(f"[INFO] Connecting (PyMAVLink) to {args.port} @ {args.baud} baud …")
     mav = mavutil.mavlink_connection(args.port, baud=args.baud, source_system=255)
     mav.wait_heartbeat()
     print("[OK] Heartbeat received - FC link established.")
@@ -111,6 +133,83 @@ def main():
         download_log(mav, log_id, size, out_file)
 
     erase_logs(mav)
+
+# -----------------------------------------------------------------------------
+# MAVFTP implementation using MAVSDK
+# -----------------------------------------------------------------------------
+
+async def ftp_download(args):
+    """Download logs using MAVFTP via MAVSDK for high-speed transfer."""
+
+    system = System()
+    conn_str = f"serial://{args.port}:{args.baud}"
+    print(f"[INFO] [MAVFTP] Connecting via {conn_str}…")
+    await system.connect(system_address=conn_str)
+
+    # Wait for system to connect
+    async for state in system.core.connection_state():
+        if state.is_connected:
+            print("[OK] [MAVFTP] System discovered.")
+            break
+
+    ftp = system.ftp
+
+    # Verify FTP capability (optional)
+    try:
+        await ftp.reset()
+    except Exception:
+        print("[ERROR] [MAVFTP] FTP reset failed. Trying anyway…")
+
+    # Some boards expose logs under /LOGS, others under /APM/LOGS
+    remote_dir_candidates = [APM_LOG_DIR, "/LOGS"]
+    remote_dir = None
+    for d in remote_dir_candidates:
+        try:
+            await ftp.list_directory(d)  # probe
+            remote_dir = d
+            break
+        except Exception:
+            continue
+
+    if remote_dir is None:
+        raise RuntimeError("Could not locate remote log directory via MAVFTP")
+
+    entries = await ftp.list_directory(remote_dir)
+    if not entries.files:
+        print("[INFO] [MAVFTP] No log files found on the vehicle.")
+        return
+
+    for f in entries.files:
+        if not f.name.lower().endswith(".bin"):
+            continue
+
+        remote_path = f"{remote_dir}/{f.name}"
+        local_path = os.path.join(args.out, f.name)
+
+        if os.path.exists(local_path):
+            print(f"[SKIP] {local_path} already exists - skipping.")
+            continue
+
+        print(f"[INFO] [MAVFTP] Downloading {f.name} ({f.size/1024:.1f} kB)…")
+
+        start_time = time.time()
+
+        async for prog in ftp.download(remote_path, args.out, use_burst=True):
+            pct = prog.bytes_transferred / prog.total_bytes * 100.0
+            elapsed = time.time() - start_time
+            speed = (prog.bytes_transferred / 1024) / elapsed if elapsed > 0 else 0
+            print(f"  ↳ {pct:.1f}% ({prog.bytes_transferred}/{prog.total_bytes} bytes) | {speed:.1f} kB/s", end="\r")
+
+        print(f"\n[OK] [MAVFTP] Saved to {local_path}")
+
+        # Remove remote after download to free space
+        try:
+            await ftp.remove_file(remote_path)
+            print("      Remote file deleted.")
+        except Exception as e:
+            print(f"      [WARN] Failed to delete remote file: {e}")
+
+    print("[INFO] [MAVFTP] All logs downloaded.")
 
 if __name__ == "__main__":
     try:
