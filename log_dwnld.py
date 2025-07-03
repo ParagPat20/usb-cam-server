@@ -42,6 +42,7 @@ def request_log_list(mav):
 
 def download_log(mav, log_id: int, size: int, out_path: str):
     print(f"[INFO] Downloading log {log_id} ({size/1024:.1f} kB)…")
+    start_time = time.time()
     with open(out_path, "wb") as fh:
         ofs = 0
         last_print = time.time()
@@ -54,7 +55,7 @@ def download_log(mav, log_id: int, size: int, out_path: str):
                     mav.mav.log_request_data_send(mav.target_system, mav.target_component, log_id, ofs, CHUNK_SIZE)
                     continue
                 if msg.id != log_id or msg.ofs != ofs:
-                    # not the chunk we asked for – ignore
+                    # not the chunk we asked for - ignore
                     continue
                 fh.write(bytes(msg.data[: msg.count]))
                 ofs += msg.count
@@ -62,7 +63,9 @@ def download_log(mav, log_id: int, size: int, out_path: str):
             # progress output
             if time.time() - last_print > 1:
                 pct = ofs / size * 100.0
-                print(f"  ↳ {pct:.1f}% ({ofs}/{size} bytes)", end="\r")
+                elapsed = time.time() - start_time
+                speed_kBps = (ofs / 1024) / elapsed if elapsed > 0 else 0
+                print(f"  ↳ {pct:.1f}% ({ofs}/{size} bytes) | {speed_kBps:.1f} kB/s", end="\r")
                 last_print = time.time()
     print(f"\n[OK] Log {log_id} saved to {out_path}")
 
@@ -92,7 +95,7 @@ def main():
     print(f"[INFO] Connecting to {args.port} @ {args.baud} baud …")
     mav = mavutil.mavlink_connection(args.port, baud=args.baud, source_system=255)
     mav.wait_heartbeat()
-    print("[OK] Heartbeat received – FC link established.")
+    print("[OK] Heartbeat received - FC link established.")
 
     logs = request_log_list(mav)
     if not logs:
@@ -103,7 +106,7 @@ def main():
         size = logs[log_id]
         out_file = os.path.join(args.out, f"log_{log_id}.BIN")
         if os.path.exists(out_file):
-            print(f"[SKIP] {out_file} already exists – skipping.")
+            print(f"[SKIP] {out_file} already exists - skipping.")
             continue
         download_log(mav, log_id, size, out_file)
 
@@ -113,4 +116,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n[INFO] Interrupted by user – exiting.") 
+        print("\n[INFO] Interrupted by user - exiting.") 
