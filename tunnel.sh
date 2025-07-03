@@ -106,8 +106,8 @@ while true; do
                 while read -r line; do log_message "[DIAG] $line"; done < "$diag_log"
                 rm -f "$diag_log"
 
-                if [ $diag_exit -ne 0 ]; then
-                    log_message "Diagnostics reported issues. Attempting to fix nginx configuration..."
+                if [ $diag_exit -ne 0 ] || grep -q "✗" "$diag_log"; then
+                    log_message "Diagnostics indicated issues. Attempting to fix nginx configuration..."
                     ./manage.sh fix-ec2-nginx | while read -r line; do log_message "[FIX] $line"; done
                 else
                     log_message "Diagnostics passed. No nginx fix needed."
