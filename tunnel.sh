@@ -44,6 +44,12 @@ find_available_port() {
     return $base_port
 }
 
+# Function to check internet connectivity by pinging Google DNS
+check_internet() {
+    ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1
+    return $?
+}
+
 # Ensure the key file has correct permissions
 chmod 400 $EC2_KEY_PATH
 
@@ -53,11 +59,17 @@ log_message "Remote host: $EC2_USER@$EC2_HOST"
 
 # Main loop to keep tunnel running
 while true; do
+    # Ensure we have an active internet connection before (re)establishing the tunnel
+    while ! check_internet; do
+        log_message "No internet connection detected. Retrying in $RETRY_DELAY seconds..."
+        sleep $RETRY_DELAY
+    done
+
     log_message "Attempting to establish SSH tunnel..."
     
     # Create the SSH tunnel with -g flag to allow remote hosts to connect
     # Capture both stdout and stderr to detect specific errors
-    tunnel_output=$(ssh -N -g -R 0.0.0.0:$REMOTE_PORT:localhost:$LOCAL_PORT -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST 2>&1)
+    tunnel_output=$(ssh -N -g -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -R 0.0.0.0:$REMOTE_PORT:localhost:$LOCAL_PORT -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST 2>&1)
     tunnel_exit_code=$?
     
     # Check for specific error messages
@@ -72,7 +84,7 @@ while true; do
         
         if [ $alternative_port -ne $REMOTE_PORT ]; then
             log_message "Trying alternative port $alternative_port..."
-            tunnel_output=$(ssh -N -g -R 0.0.0.0:$alternative_port:localhost:$LOCAL_PORT -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST 2>&1)
+            tunnel_output=$(ssh -N -g -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -R 0.0.0.0:$alternative_port:localhost:$LOCAL_PORT -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST 2>&1)
             tunnel_exit_code=$?
             
             if [ $tunnel_exit_code -eq 0 ]; then
