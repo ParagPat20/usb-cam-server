@@ -11,6 +11,7 @@ MIN_DISTANCE, MAX_DISTANCE = 30, 3000
 SECTOR_ORIENTATION = {2:0,1:1,8:2,7:3,6:4,5:5,4:6,3:7}
 SEND_INTERVAL = 0.1  # 10 Hz
 RECONNECT_DELAY = 2.0  # seconds to wait before reconnecting
+HEARTBEAT_TIMEOUT = 5.0  # seconds without FC heartbeat before reconnect
 
 # 📈 Kalman setup for each sector
 filters = {}
@@ -58,6 +59,7 @@ def send_distances(mav, dist):
     last_send_time = current_time
     print(f"[SEND @ {current_time:.3f}]" + ", ".join(f"S{sid}:{int(dist[sid])}cm" for sid in sorted(dist)))
     
+    # Track if any send fails so we can trigger a reconnect upstream
     for sid, d in dist.items():
         try:
             mav.mav.distance_sensor_send(
@@ -68,7 +70,8 @@ def send_distances(mav, dist):
                 covariance=0
             )
         except Exception as e:
-            print(f"[ERROR] Failed to send distance for sector {sid}: {e}")
+            # Surface the error so the caller can decide how to recover
+            raise RuntimeError(f"Failed to send distance for sector {sid}: {e}") from e
 
 def connect_serial():
     """Connect to MR72 with retry logic"""
@@ -104,14 +107,37 @@ def main():
     rs = connect_serial()
     mav = connect_mavlink()
     
-    last_hb = time.time()
+    last_hb = time.time()            # time we last SENT a heartbeat
+    last_fc_hb = time.time()         # time we last RECEIVED a heartbeat from FC
     next_send = time.time()
     last_data_time = time.time()
 
     buf = bytearray()
     while True:
         try:
-            # Send heartbeat
+            # -----------------------
+            # 1) Monitor incoming heartbeat from FC
+            # -----------------------
+            try:
+                msg = mav.recv_match(type='HEARTBEAT', blocking=False)
+                if msg:
+                    last_fc_hb = time.time()
+            except Exception as e:
+                print(f"[ERROR] Failed to read MAVLink message: {e}")
+
+            # If we have not heard from FC recently, force reconnect
+            if time.time() - last_fc_hb > HEARTBEAT_TIMEOUT:
+                print("[WARNING] No heartbeat from FC – reconnecting...")
+                try:
+                    mav.close()
+                except Exception:
+                    pass
+                mav = connect_mavlink()
+                last_fc_hb = time.time()
+
+            # -----------------------
+            # 2) Send our own heartbeat
+            # -----------------------
             if time.time() - last_hb >= 1.0:
                 try:
                     mav.mav.heartbeat_send(type=6, autopilot=8,
@@ -120,6 +146,10 @@ def main():
                 except Exception as e:
                     print(f"[ERROR] Failed to send heartbeat: {e}")
                     print("[DEBUG] Reconnecting to FC...")
+                    try:
+                        mav.close()
+                    except Exception:
+                        pass
                     mav = connect_mavlink()
 
             # Read serial data with timeout
@@ -156,10 +186,21 @@ def main():
 
             # Send distances
             if time.time() >= next_send:
-                send_distances(mav, filtered)
-                next_send += SEND_INTERVAL
-                if time.time() > next_send:
-                    next_send = time.time()
+                try:
+                    send_distances(mav, filtered)
+                except Exception as e:
+                    print(f"[ERROR] Distance send failed: {e}")
+                    print("[DEBUG] Reconnecting to FC...")
+                    # Close existing connection gracefully
+                    try:
+                        mav.close()
+                    except Exception:
+                        pass
+                    mav = connect_mavlink()
+                finally:
+                    next_send += SEND_INTERVAL
+                    if time.time() > next_send:
+                        next_send = time.time()
 
         except KeyboardInterrupt:
             print("\n[DEBUG] Shutting down...")
