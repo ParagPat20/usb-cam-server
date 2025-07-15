@@ -26,3 +26,6 @@ filterpy>=1.4.5
 mavsdk>=2.0.0
 protobuf==5.29.0 
 plotly>=5.17.0 
+
+moviepy==1.0.3
+imageio-ffmpeg>=0.4.9 
